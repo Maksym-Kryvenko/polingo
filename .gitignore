@@ -3,8 +3,16 @@
 __pycache__/
 *.pyc
 backend-app/polingo.db
+.DS_Store
+.env
 
 # Frontend artifacts
 frontend-app/node_modules/
 frontend-app/dist/
 frontend-app/.env
+
+# Local model files
+*.gguf
+
+# Notebooks
+*.ipynb
