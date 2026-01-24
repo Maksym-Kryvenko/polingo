@@ -9,23 +9,17 @@ const FIELD_LABELS = {
   polish: "Polish entry",
   english: "English entry",
   ukrainian: "Ukrainian entry",
+  resolved: "LLM match",
 };
-
-const normalize = (value = "") =>
-  value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
 
 const buildUrl = (path) => `${API_BASE_URL}/${path}`;
 
 function App() {
+  const [activePage, setActivePage] = useState("home");
   const [languageSet, setLanguageSet] = useState("english");
   const [manualEntry, setManualEntry] = useState("");
   const [manualStatus, setManualStatus] = useState(null);
   const [wordPool, setWordPool] = useState([]);
-  const [practiceDirection, setPracticeDirection] = useState(null);
   const [practiceIndex, setPracticeIndex] = useState(0);
   const [answer, setAnswer] = useState("");
   const [practiceStatus, setPracticeStatus] = useState(null);
@@ -34,22 +28,28 @@ function App() {
 
   useEffect(() => {
     fetchStats();
+    fetchSession();
   }, []);
 
   useEffect(() => {
     if (!wordPool.length) {
-      setPracticeDirection(null);
       setPracticeIndex(0);
     }
-  }, [wordPool]);
+  }, [wordPool.length]);
 
+  useEffect(() => {
+    setAnswer("");
+    setPracticeStatus(null);
+    setPracticeIndex(0);
+  }, [activePage, languageSet]);
+
+  const practiceDirection =
+    activePage === "translation" ? "translation" : activePage === "writing" ? "writing" : null;
   const currentWord =
     practiceDirection && wordPool.length ? wordPool[practiceIndex % wordPool.length] : null;
   const targetLabel = LANGUAGE_LABELS[languageSet];
   const prompt =
     practiceDirection === "translation" ? currentWord?.polish : currentWord?.[languageSet];
-  const expectedResponse =
-    practiceDirection === "translation" ? currentWord?.[languageSet] : currentWord?.polish;
 
   const statsSummary = useMemo(() => {
     if (!stats) {
@@ -86,6 +86,33 @@ function App() {
     }
   }
 
+  async function fetchSession() {
+    try {
+      const response = await fetch(buildUrl("session"));
+      if (!response.ok) {
+        throw new Error("Session fetch failed");
+      }
+      const payload = await response.json();
+      setLanguageSet(payload.language_set);
+      setWordPool(payload.words ?? []);
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  const handleLanguageChange = async (value) => {
+    setLanguageSet(value);
+    try {
+      await fetch(buildUrl("session/language"), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ language_set: value }),
+      });
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   const handleLoadInitial = async () => {
     try {
       const response = await fetch(buildUrl("words/initial?count=10"));
@@ -93,8 +120,17 @@ function App() {
         throw new Error("Unable to load starter set");
       }
       const payload = await response.json();
-      setWordPool(payload);
-      setManualStatus({ type: "success", message: "Loaded the first 10 words as your starter set." });
+      const saved = await fetch(buildUrl("session/words/bulk"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ word_ids: payload.map((word) => word.id) }),
+      });
+      if (!saved.ok) {
+        throw new Error("Unable to persist starter set");
+      }
+      const sessionState = await saved.json();
+      setWordPool(sessionState.words ?? []);
+      setManualStatus({ type: "success", message: "Loaded and saved the first 10 words." });
     } catch (error) {
       console.error(error);
       setManualStatus({ type: "error", message: "Could not reach the starter set. Try again." });
@@ -128,19 +164,21 @@ function App() {
         return;
       }
 
-      setWordPool((previous) => {
-        if (previous.some((entry) => entry.id === payload.word.id)) {
-          setManualStatus({
-            type: "info",
-            message: `${payload.word.polish} is already in your practice list.`,
-          });
-          return previous;
-        }
-        setManualStatus({
-          type: "success",
-          message: `Saved ${payload.word.polish} (${FIELD_LABELS[payload.matched_field] ?? "entry"}) for practice.`,
-        });
-        return [...previous, payload.word];
+      const saved = await fetch(buildUrl("session/words"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ word_id: payload.word.id }),
+      });
+      if (!saved.ok) {
+        throw new Error("Unable to save word to session");
+      }
+      const sessionState = await saved.json();
+      setWordPool(sessionState.words ?? []);
+      const sourceLabel = FIELD_LABELS[payload.matched_field] ?? "entry";
+      const extra = payload.created ? "Added via GPT validation." : "";
+      setManualStatus({
+        type: "success",
+        message: `Saved ${payload.word.polish} (${sourceLabel}). ${extra}`.trim(),
       });
     } catch (error) {
       console.error(error);
@@ -153,26 +191,9 @@ function App() {
     }
   };
 
-  const handleStartPractice = (direction) => {
-    if (!wordPool.length) {
-      setPracticeStatus({ type: "info", message: "Add some words before you start practicing." });
-      return;
-    }
-    setPracticeDirection(direction);
-    setPracticeIndex(0);
-    setAnswer("");
-    setPracticeStatus({
-      type: "info",
-      message:
-        direction === "translation"
-          ? "Translate the Polish prompt into the target language."
-          : "Write the Polish word that matches the translation.",
-    });
-  };
-
   const handlePracticeSubmit = async (event) => {
     event?.preventDefault?.();
-    if (!currentWord) {
+    if (!currentWord || !practiceDirection) {
       return;
     }
 
@@ -181,41 +202,86 @@ function App() {
       return;
     }
 
-    const normalizedAnswer = normalize(answer);
-    const normalizedExpected = normalize(expectedResponse ?? "");
-    const isCorrect = normalizedAnswer === normalizedExpected;
-    const baseMessage = isCorrect
-      ? "Correct! Keep going."
-      : `The correct answer is “${expectedResponse}”.`;
-    setPracticeStatus({ type: isCorrect ? "success" : "error", message: baseMessage });
-
     try {
-      const response = await fetch(buildUrl("practice/submit"), {
+      const response = await fetch(buildUrl("practice/validate"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           word_id: currentWord.id,
           language_set: languageSet,
           direction: practiceDirection,
-          was_correct: isCorrect,
+          answer,
         }),
       });
 
       if (!response.ok) {
-        throw new Error("Practice sync failed");
+        throw new Error("Practice validation failed");
       }
 
-      setStats(await response.json());
+      const payload = await response.json();
+      const baseMessage = payload.was_correct
+        ? "Correct! Keep going."
+        : `The correct answer is “${payload.correct_answer}”.`;
+      setPracticeStatus({ type: payload.was_correct ? "success" : "error", message: baseMessage });
+      setStats(payload.stats);
     } catch (error) {
       console.error(error);
-      setPracticeStatus((previous) => ({
-        type: previous?.type ?? "error",
-        message: `${previous?.message ?? baseMessage} Progress could not be recorded.`,
-      }));
+      setPracticeStatus({
+        type: "error",
+        message: "Progress could not be recorded. Try again.",
+      });
     }
     setAnswer("");
     setPracticeIndex((previous) => (previous + 1) % wordPool.length);
   };
+
+  const renderPracticePage = (directionLabel) => (
+    <section className="panel practice-panel">
+      <div className="panel-header">
+        <div>
+          <p className="subtitle">Practice</p>
+          <h2>{directionLabel} mode</h2>
+        </div>
+        <button className="secondary" onClick={() => setActivePage("home")}>
+          Back to main
+        </button>
+      </div>
+
+      {!wordPool.length && (
+        <p className="status info">
+          Add words to your session first, then return here to practice.
+        </p>
+      )}
+
+      <div className="practice-status">
+        <p className={`status ${practiceStatus?.type ?? "info"}`}>
+          {practiceStatus?.message ?? "Practice results appear here after each submission."}
+        </p>
+      </div>
+
+      <form onSubmit={handlePracticeSubmit} className="practice-card">
+        <div className="practice-mirror">
+          <p className="subtitle">Target language: {targetLabel}</p>
+          <p className="prompt">
+            {prompt ?? "Add words and return here to start practicing."}
+          </p>
+        </div>
+        <input
+          value={answer}
+          onChange={(event) => setAnswer(event.target.value)}
+          placeholder={
+            practiceDirection === "translation"
+              ? `Type the ${targetLabel} translation...`
+              : "Type the Polish word..."
+          }
+          disabled={!practiceDirection || !currentWord}
+        />
+        <button type="submit" disabled={!practiceDirection || !currentWord}>
+          Submit answer
+        </button>
+      </form>
+    </section>
+  );
 
   return (
     <div className="app-shell">
@@ -224,9 +290,8 @@ function App() {
           <p className="eyebrow">Polingo</p>
           <h1>Polish practice that respects your tempo</h1>
           <p className="lede">
-            Start with the built-in list or validate the words you’ve been studying manually. Once the
-            deck feels right, decide whether you want to translate or write in Polish and track your
-            cumulative progress in the corner.
+            Your session is saved automatically. Add words, practice translations, and come back later
+            without losing your progress.
           </p>
         </div>
         <div className="stats-card">
@@ -244,129 +309,120 @@ function App() {
       </header>
 
       <main className="layout">
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="subtitle">Language set</p>
-              <select
-                value={languageSet}
-                onChange={(event) => setLanguageSet(event.target.value)}
-                className="language-select"
-              >
-                <option value="english">Polish + English</option>
-                <option value="ukrainian">Polish + Ukrainian</option>
-              </select>
+        {activePage === "home" && (
+          <section className="panel">
+            <div className="panel-header">
+              <div>
+                <p className="subtitle">Session control</p>
+                <select
+                  value={languageSet}
+                  onChange={(event) => handleLanguageChange(event.target.value)}
+                  className="language-select"
+                >
+                  <option value="english">Polish + English</option>
+                  <option value="ukrainian">Polish + Ukrainian</option>
+                </select>
+              </div>
+              <div className="readiness">
+                <p className="subtitle">Session readiness</p>
+                <span>{wordPool.length} words</span>
+                <p className="subtitle">Available in database</p>
+                <span>{dictionarySize} words</span>
+              </div>
             </div>
-            <div className="readiness">
-              <p className="subtitle">Session readiness</p>
-              <span>{wordPool.length} words</span>
-              <p className="subtitle">Available in database</p>
-              <span>{dictionarySize} words</span>
+
+            <div className="progress-track">
+              <span style={{ width: readinessBar }} />
             </div>
-          </div>
 
-          <div className="progress-track">
-            <span style={{ width: readinessBar }} />
-          </div>
-
-          <div className="instruction-card">
-            <p className="step">1</p>
-            <div>
-              <p className="instruction-title">Validate new words</p>
-              <p className="instruction-body">
-                The database checks every manually entered word so you catch spelling mistakes before
-                you start practicing.
-              </p>
+            <div className="nav-grid">
+              <button className="nav-card" onClick={() => setActivePage("add")}
+                type="button">
+                <p className="subtitle">Add words</p>
+                <h3>Build your session list</h3>
+                <p>Validate new entries or load the starter set.</p>
+              </button>
+              <button className="nav-card" onClick={() => setActivePage("translation")}
+                type="button">
+                <p className="subtitle">Translation</p>
+                <h3>Translate Polish prompts</h3>
+                <p>Check yourself in English or Ukrainian.</p>
+              </button>
+              <button className="nav-card" onClick={() => setActivePage("writing")}
+                type="button">
+                <p className="subtitle">Writing</p>
+                <h3>Write Polish words</h3>
+                <p>Recall the Polish form from translation.</p>
+              </button>
             </div>
-          </div>
+          </section>
+        )}
 
-          <div className="manual-entry">
-            <input
-              value={manualEntry}
-              onChange={(event) => setManualEntry(event.target.value)}
-              type="text"
-              placeholder="Type Polish, English or Ukrainian word"
-            />
-            <button onClick={handleManualSubmit}>Validate &amp; add</button>
-          </div>
-          {manualStatus && <p className={`status ${manualStatus.type}`}>{manualStatus.message}</p>}
-
-          <div className="instruction-card">
-            <p className="step">2</p>
-            <div>
-              <p className="instruction-title">Or load the starter list</p>
-              <p className="instruction-body">
-                These first 10 words are guaranteed to be in the database and let you jump straight
-                into practice.
-              </p>
+        {activePage === "add" && (
+          <section className="panel">
+            <div className="panel-header">
+              <div>
+                <p className="subtitle">Add words</p>
+                <h2>Curate your session list</h2>
+              </div>
+              <button className="secondary" onClick={() => setActivePage("home")}>
+                Back to main
+              </button>
             </div>
-          </div>
 
-          <button className="secondary" onClick={handleLoadInitial}>
-            Load starter set
-          </button>
-
-          {wordPool.length > 0 && (
-            <div className="word-preview">
-              <p className="subtitle">Recent entries</p>
-              <ul>
-                {wordPool.slice(-4).map((word) => (
-                  <li key={word.id}>
-                    <span>{word.polish}</span>
-                    <span>{word[languageSet]}</span>
-                  </li>
-                ))}
-              </ul>
+            <div className="instruction-card">
+              <p className="step">1</p>
+              <div>
+                <p className="instruction-title">Validate new words</p>
+                <p className="instruction-body">
+                  The database checks every manually entered word and can expand the dictionary with GPT.
+                </p>
+              </div>
             </div>
-          )}
 
-          <ol className="flow">
-            <li>Validate words or load a proven starter collection.</li>
-            <li>Choose translation or writing mode depending on how you want to train.</li>
-            <li>Submit answers and watch your daily percentage update instantly.</li>
-          </ol>
-        </section>
-
-        <section className="panel practice-panel">
-          <div className="practice-header">
-            <div>
-              <p className="subtitle">Practice</p>
-              <h2>{practiceDirection ? `${practiceDirection} mode` : "Choose a practice mode"}</h2>
+            <div className="manual-entry">
+              <input
+                value={manualEntry}
+                onChange={(event) => setManualEntry(event.target.value)}
+                type="text"
+                placeholder="Type Polish, English or Ukrainian word"
+              />
+              <button onClick={handleManualSubmit}>Validate &amp; add</button>
             </div>
-            <div className="mode-buttons">
-              <button onClick={() => handleStartPractice("translation")}>Translation practice</button>
-              <button onClick={() => handleStartPractice("writing")}>Writing practice</button>
-            </div>
-          </div>
+            {manualStatus && <p className={`status ${manualStatus.type}`}>{manualStatus.message}</p>}
 
-          <div className="practice-status">
-            <p className={`status ${practiceStatus?.type ?? "info"}`}>
-              {practiceStatus?.message ?? "Practice results appear here after each submission."}
-            </p>
-          </div>
-
-          <form onSubmit={handlePracticeSubmit} className="practice-card">
-            <div className="practice-mirror">
-              <p className="subtitle">Target language: {targetLabel}</p>
-              <p className="prompt">
-                {prompt ?? "Add words and choose a mode before starting."}
-              </p>
+            <div className="instruction-card">
+              <p className="step">2</p>
+              <div>
+                <p className="instruction-title">Or load the starter list</p>
+                <p className="instruction-body">
+                  These first 10 words are guaranteed to be in the database and are saved to your session.
+                </p>
+              </div>
             </div>
-            <input
-              value={answer}
-              onChange={(event) => setAnswer(event.target.value)}
-              placeholder={
-                practiceDirection === "translation"
-                  ? `Type the ${targetLabel} translation...`
-                  : "Type the Polish word..."
-              }
-              disabled={!practiceDirection || !currentWord}
-            />
-            <button type="submit" disabled={!practiceDirection || !currentWord}>
-              Submit answer
+
+            <button className="secondary" onClick={handleLoadInitial}>
+              Load starter set
             </button>
-          </form>
-        </section>
+
+            {wordPool.length > 0 && (
+              <div className="word-preview">
+                <p className="subtitle">Recent entries</p>
+                <ul>
+                  {wordPool.slice(-4).map((word) => (
+                    <li key={word.id}>
+                      <span>{word.polish}</span>
+                      <span>{word[languageSet]}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </section>
+        )}
+
+        {activePage === "translation" && renderPracticePage("Translation")}
+        {activePage === "writing" && renderPracticePage("Writing")}
       </main>
     </div>
   );

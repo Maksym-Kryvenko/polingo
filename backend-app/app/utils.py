@@ -1,4 +1,6 @@
 from datetime import date, timedelta
+import re
+import unicodedata
 
 from sqlalchemy import func
 from sqlmodel import Session, select
@@ -40,3 +42,9 @@ def calculate_stats(session: Session) -> StatsResponse:
         overall_percentage=round(overall_percent, 1),
         available_words=int(word_count),
     )
+
+
+def normalize_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFD", value or "")
+    normalized = re.sub(r"[\u0300-\u036f]", "", normalized)
+    return normalized.strip().lower()

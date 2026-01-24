@@ -1,10 +1,9 @@
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.models import Word
+from app.models import UserSession, Word
 from app.seed import seed_words
 
-
-DATABASE_URL = "sqlite:///polingo.db"
+DATABASE_URL = "sqlite:////app/data/polingo.db"
 
 engine = create_engine(
     DATABASE_URL,
@@ -18,6 +17,10 @@ def init_db() -> None:
         has_words = session.exec(select(Word)).first()
         if not has_words:
             seed_words(session)
+        has_session = session.exec(select(UserSession)).first()
+        if not has_session:
+            session.add(UserSession())
+            session.commit()
 
 
 def get_session() -> Session:

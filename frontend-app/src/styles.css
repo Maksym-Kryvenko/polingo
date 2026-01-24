@@ -292,6 +292,37 @@ body {
   color: var(--muted);
 }
 
+.nav-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.nav-card {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 20px;
+  padding: 1.2rem;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.nav-card h3 {
+  margin: 0.4rem 0 0.25rem;
+}
+
+.nav-card p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.nav-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
 .practice-panel {
   min-height: 520px;
   display: flex;

@@ -1,11 +1,16 @@
-from fastapi import APIRouter
-from sqlmodel import Session
+from fastapi import APIRouter, HTTPException
+from sqlmodel import Session, select
 
 from app.database import engine
-from app.models import PracticeRecord
-from app.schemas import PracticeSubmission, StatsResponse
-from app.utils import calculate_stats
-
+from app.llm import validate_translation_via_llm
+from app.models import PracticeRecord, PracticeDirection, Word, WordLanguage, WordOption
+from app.schemas import (
+    PracticeSubmission,
+    PracticeValidationRequest,
+    PracticeValidationResponse,
+    StatsResponse,
+)
+from app.utils import calculate_stats, normalize_text
 
 router = APIRouter(prefix="/practice", tags=["practice"])
 
@@ -16,3 +21,93 @@ def submit_practice(payload: PracticeSubmission) -> StatsResponse:
         session.add(PracticeRecord(**payload.model_dump()))
         session.commit()
         return calculate_stats(session)
+
+
+def get_target_language(
+    direction: PracticeDirection, language_set: str
+) -> WordLanguage:
+    if direction == PracticeDirection.writing:
+        return WordLanguage.polish
+    return WordLanguage(language_set)
+
+
+@router.post("/validate", response_model=PracticeValidationResponse)
+def validate_practice(payload: PracticeValidationRequest) -> PracticeValidationResponse:
+    with Session(engine) as session:
+        word = session.get(Word, payload.word_id)
+        if not word:
+            raise HTTPException(status_code=404, detail="Word not found")
+
+        expected = (
+            word.polish
+            if payload.direction == PracticeDirection.writing
+            else getattr(word, payload.language_set)
+        )
+
+        target_language = get_target_language(payload.direction, payload.language_set)
+        options = session.exec(
+            select(WordOption).where(
+                WordOption.word_id == word.id,
+                WordOption.language == target_language,
+            )
+        ).all()
+        accepted_answers = [expected] + [option.value for option in options]
+
+        normalized_answer = normalize_text(payload.answer)
+        matched_via = None
+        is_correct = False
+        for answer in accepted_answers:
+            if normalize_text(answer) == normalized_answer:
+                is_correct = True
+                matched_via = "option" if answer != expected else "direct"
+                break
+
+        if not is_correct:
+            try:
+                llm_validation = validate_translation_via_llm(
+                    polish=word.polish,
+                    answer=payload.answer,
+                    direction=payload.direction,
+                    target_language=target_language,
+                    expected=expected,
+                )
+            except RuntimeError as exc:
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+            if llm_validation.get("is_correct"):
+                corrected = llm_validation.get("normalized_answer") or payload.answer
+                is_correct = True
+                matched_via = "llm"
+                exists = session.exec(
+                    select(WordOption).where(
+                        WordOption.word_id == word.id,
+                        WordOption.language == target_language,
+                        WordOption.value == corrected,
+                    )
+                ).first()
+                if not exists:
+                    session.add(
+                        WordOption(
+                            word_id=word.id,
+                            language=target_language,
+                            value=corrected,
+                        )
+                    )
+                    session.commit()
+
+        session.add(
+            PracticeRecord(
+                word_id=word.id,
+                language_set=payload.language_set,
+                direction=payload.direction,
+                was_correct=is_correct,
+            )
+        )
+        session.commit()
+
+        return PracticeValidationResponse(
+            was_correct=is_correct,
+            correct_answer=expected,
+            matched_via=matched_via,
+            stats=calculate_stats(session),
+        )

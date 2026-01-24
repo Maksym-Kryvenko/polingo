@@ -10,6 +10,8 @@ Polingo is a minimalist Polish vocabulary trainer for beginners. The web experie
 - **Starter deck:** Load the first 10 seeded words to practice immediately without typing anything.
 - **Practice modes:** Choose translation (read Polish, write the translation) or writing (read the translation, write Polish) for targeted drills.
 - **Progress tracking:** A dedicated `practice_record` table stores every attempt so daily and overall accuracy can be computed. The top-right stats pill shows today’s percentage, the trend vs. yesterday, and the overall correct-answer percentage.
+- **Persistent sessions:** Your language set and practice word list are stored in SQLite so you can resume after restarts.
+- **GPT-assisted additions:** When a word is not found, the backend validates spelling and adds translations using `gpt-4.1-mini`.
 
 ### Flow
 1. Either validate a manually entered word or import the starter list.
@@ -30,6 +32,10 @@ cd backend-app
 python -m pip install -r requirements.txt
 uvicorn main:app --reload
 ```
+Create a `.env` file in `backend-app/` with:
+```
+OPENAI_API_KEY=your_key_here
+```
 FastAPI serves the `/api` surface, seeds the vocabulary if the database is empty, and exposes `/words/initial`, `/words/check`, `/practice/submit`, and `/stats`.
 
 ### Frontend setup
@@ -44,7 +50,7 @@ The Vite app hits the backend base URL defined by `VITE_API_BASE_URL` (defaults 
 ```bash
 docker compose up --build
 ```
-The Docker Compose file builds separate frontend and backend images and exposes ports `5173` (Vite) and `8000` (FastAPI). The frontend container injects `VITE_API_BASE_URL=http://backend:8000/api` so it can reach the backend within the shared network.
+The Docker Compose file builds separate frontend and backend images and exposes ports `5173` (Vite) and `8000` (FastAPI). The backend uses a named volume (`polingo-db`) mounted at `/app/data` to persist the SQLite database so your words and stats survive `docker compose down` / `up` cycles.
 
 ## Usage
 1. Enter a word/phrase in the manual input field and click **Validate & add**; the UI will show whether the word exists and which column matched.
