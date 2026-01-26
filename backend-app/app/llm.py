@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 from functools import lru_cache
@@ -81,4 +82,60 @@ def validate_translation_via_llm(
         "is_correct": bool(payload.get("is_correct")),
         "normalized_answer": str(payload.get("normalized_answer", "")),
         "rationale": str(payload.get("rationale", "")),
+    }
+
+
+def transcribe_audio(audio_data: bytes, filename: str = "audio.webm") -> str:
+    """Transcribe audio using OpenAI Whisper API."""
+    client = get_openai_client()
+
+    audio_file = io.BytesIO(audio_data)
+    audio_file.name = filename
+
+    response = client.audio.transcriptions.create(
+        model="whisper-1",
+        file=audio_file,
+        language="pl",
+    )
+    return response.text.strip()
+
+
+def evaluate_pronunciation_via_llm(
+    *,
+    expected_word: str,
+    transcribed_text: str,
+) -> Dict[str, Any]:
+    """Evaluate if the transcribed pronunciation matches the expected word."""
+    client = get_openai_client()
+
+    prompt = (
+        "You are a Polish language pronunciation evaluator. Compare the expected Polish word "
+        "with what was transcribed from the learner's speech. Consider that speech-to-text "
+        "may have minor variations. Be lenient with capitalization and punctuation. "
+        "Return JSON only with keys: is_correct (boolean), feedback (string with helpful pronunciation tips if incorrect), "
+        "similarity_score (float 0-1 indicating how close the pronunciation was)."
+    )
+
+    user_message = (
+        f"Expected Polish word: {expected_word}\n"
+        f"Transcribed speech: {transcribed_text}"
+    )
+
+    response = client.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=[
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": user_message},
+        ],
+        temperature=0.0,
+        response_format={"type": "json_object"},
+    )
+
+    content = response.choices[0].message.content or "{}"
+    payload: Dict[str, Any] = json.loads(content)
+
+    return {
+        "is_correct": bool(payload.get("is_correct")),
+        "feedback": str(payload.get("feedback", "")),
+        "similarity_score": float(payload.get("similarity_score", 0.0)),
     }

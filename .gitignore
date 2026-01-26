@@ -5,6 +5,9 @@ __pycache__/
 backend-app/polingo.db
 .DS_Store
 .env
+.python-version
+pyproject.toml
+uv.lock
 
 # Frontend artifacts
 frontend-app/node_modules/

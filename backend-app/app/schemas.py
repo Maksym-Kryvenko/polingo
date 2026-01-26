@@ -17,8 +17,41 @@ class WordRead(SQLModel):
     ukrainian: str
 
 
+class WordWithStats(SQLModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    polish: str
+    english: str
+    ukrainian: str
+    total_attempts: int = 0
+    correct_attempts: int = 0
+    error_rate: float = 0.0  # Higher = more errors
+
+
 class WordCheckRequest(SQLModel):
     text: str
+
+
+class WordCheckBulkRequest(SQLModel):
+    text: str  # Comma-separated words/phrases
+
+
+class WordCheckResult(SQLModel):
+    text: str
+    found: bool
+    word: Optional[WordRead] = None
+    matched_field: Optional[str] = None
+    created: bool = False
+    source: Optional[str] = None
+    duplicate: bool = False
+
+
+class WordCheckBulkResponse(SQLModel):
+    results: list[WordCheckResult]
+    added_count: int
+    duplicate_count: int
+    failed_count: int
 
 
 class WordCheckResponse(SQLModel):
@@ -64,7 +97,7 @@ class SessionLanguageUpdate(SQLModel):
 
 class SessionState(SQLModel):
     language_set: LanguageSet
-    words: list[WordRead]
+    words: list[WordWithStats]
 
 
 class WordOptionRead(SQLModel):
@@ -78,3 +111,12 @@ class StatsResponse(SQLModel):
     trend: float
     overall_percentage: float
     available_words: int
+
+
+class PronunciationValidationResponse(SQLModel):
+    was_correct: bool
+    expected_word: str
+    transcribed_text: str
+    feedback: str
+    similarity_score: float
+    stats: StatsResponse

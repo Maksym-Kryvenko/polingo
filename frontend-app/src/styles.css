@@ -277,13 +277,20 @@ body {
   background: rgba(255, 255, 255, 0.04);
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: 0.2rem;
   font-size: 0.95rem;
 }
 
-.word-preview li span:last-child {
+.word-preview li span:nth-child(2) {
   font-weight: 600;
   color: var(--accent-strong);
+}
+
+.word-preview li .error-rate {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 400;
+  margin-top: 0.15rem;
 }
 
 .flow {
@@ -407,6 +414,66 @@ body {
 .practice-card button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Pronunciation Practice Styles */
+.pronunciation-card {
+  text-align: center;
+}
+
+.pronunciation-prompt {
+  font-size: 2.4rem !important;
+  margin-bottom: 0.5rem !important;
+}
+
+.translation-hint {
+  color: var(--muted);
+  font-size: 1.1rem;
+  margin: 0;
+  font-style: italic;
+}
+
+.pronunciation-controls {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-top: 1.5rem;
+}
+
+.record-btn {
+  border: none;
+  border-radius: 16px;
+  padding: 1rem 2rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #091730;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.record-btn:hover:not(:disabled) {
+  transform: scale(1.02);
+  box-shadow: 0 6px 20px rgba(255, 179, 71, 0.35);
+}
+
+.record-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.record-btn.recording {
+  background: linear-gradient(135deg, #ff4d4d, #ff6b6b);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 77, 77, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 15px rgba(255, 77, 77, 0);
+  }
 }
 
 @media (max-width: 768px) {

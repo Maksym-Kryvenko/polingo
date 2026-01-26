@@ -14,6 +14,7 @@ class LanguageSet(str, Enum):
 class PracticeDirection(str, Enum):
     translation = "translation"
     writing = "writing"
+    pronunciation = "pronunciation"
 
 
 class WordLanguage(str, Enum):

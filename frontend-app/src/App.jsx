@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
 const LANGUAGE_LABELS = {
@@ -25,6 +25,13 @@ function App() {
   const [practiceStatus, setPracticeStatus] = useState(null);
   const [stats, setStats] = useState(null);
   const [loadingStats, setLoadingStats] = useState(true);
+  
+  // Pronunciation state
+  const [isRecording, setIsRecording] = useState(false);
+  const [pronunciationStatus, setPronunciationStatus] = useState(null);
+  const [pronunciationIndex, setPronunciationIndex] = useState(0);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
 
   useEffect(() => {
     fetchStats();
@@ -41,12 +48,16 @@ function App() {
     setAnswer("");
     setPracticeStatus(null);
     setPracticeIndex(0);
+    setPronunciationStatus(null);
+    setPronunciationIndex(0);
   }, [activePage, languageSet]);
 
   const practiceDirection =
     activePage === "translation" ? "translation" : activePage === "writing" ? "writing" : null;
   const currentWord =
     practiceDirection && wordPool.length ? wordPool[practiceIndex % wordPool.length] : null;
+  const currentPronunciationWord =
+    activePage === "pronunciation" && wordPool.length ? wordPool[pronunciationIndex % wordPool.length] : null;
   const targetLabel = LANGUAGE_LABELS[languageSet];
   const prompt =
     practiceDirection === "translation" ? currentWord?.polish : currentWord?.[languageSet];
@@ -144,42 +155,81 @@ function App() {
       return;
     }
 
+    // Check if input contains commas (bulk input)
+    const hasBulkInput = trimmed.includes(",");
+
     try {
-      const response = await fetch(buildUrl("words/check"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: trimmed }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Validation failed");
-      }
-
-      const payload = await response.json();
-      if (!payload.found || !payload.word) {
-        setManualStatus({
-          type: "error",
-          message: "Word not found. Please double-check spelling or try a different form.",
+      if (hasBulkInput) {
+        // Bulk word check
+        const response = await fetch(buildUrl("words/check/bulk"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: trimmed }),
         });
-        return;
-      }
 
-      const saved = await fetch(buildUrl("session/words"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ word_id: payload.word.id }),
-      });
-      if (!saved.ok) {
-        throw new Error("Unable to save word to session");
+        if (!response.ok) {
+          throw new Error("Bulk validation failed");
+        }
+
+        const payload = await response.json();
+        
+        // Refresh session to get updated word list with stats
+        await fetchSession();
+        
+        const messages = [];
+        if (payload.added_count > 0) {
+          messages.push(`Added ${payload.added_count} word(s)`);
+        }
+        if (payload.duplicate_count > 0) {
+          messages.push(`${payload.duplicate_count} already in session`);
+        }
+        if (payload.failed_count > 0) {
+          messages.push(`${payload.failed_count} could not be found`);
+        }
+        
+        const hasSuccess = payload.added_count > 0;
+        setManualStatus({
+          type: hasSuccess ? "success" : (payload.duplicate_count > 0 ? "info" : "error"),
+          message: messages.join(". ") + ".",
+        });
+      } else {
+        // Single word check (existing logic)
+        const response = await fetch(buildUrl("words/check"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: trimmed }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Validation failed");
+        }
+
+        const payload = await response.json();
+        if (!payload.found || !payload.word) {
+          setManualStatus({
+            type: "error",
+            message: "Word not found. Please double-check spelling or try a different form.",
+          });
+          return;
+        }
+
+        const saved = await fetch(buildUrl("session/words"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ word_id: payload.word.id }),
+        });
+        if (!saved.ok) {
+          throw new Error("Unable to save word to session");
+        }
+        const sessionState = await saved.json();
+        setWordPool(sessionState.words ?? []);
+        const sourceLabel = FIELD_LABELS[payload.matched_field] ?? "entry";
+        const extra = payload.created ? "Added via GPT validation." : "";
+        setManualStatus({
+          type: "success",
+          message: `Saved ${payload.word.polish} (${sourceLabel}). ${extra}`.trim(),
+        });
       }
-      const sessionState = await saved.json();
-      setWordPool(sessionState.words ?? []);
-      const sourceLabel = FIELD_LABELS[payload.matched_field] ?? "entry";
-      const extra = payload.created ? "Added via GPT validation." : "";
-      setManualStatus({
-        type: "success",
-        message: `Saved ${payload.word.polish} (${sourceLabel}). ${extra}`.trim(),
-      });
     } catch (error) {
       console.error(error);
       setManualStatus({
@@ -233,6 +283,92 @@ function App() {
     }
     setAnswer("");
     setPracticeIndex((previous) => (previous + 1) % wordPool.length);
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        stream.getTracks().forEach(track => track.stop());
+        await submitPronunciation(audioBlob);
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setPronunciationStatus({ type: "info", message: "Recording... Click Stop when done." });
+    } catch (error) {
+      console.error(error);
+      setPronunciationStatus({
+        type: "error",
+        message: "Could not access microphone. Please allow microphone access and try again.",
+      });
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      setPronunciationStatus({ type: "info", message: "Processing your pronunciation..." });
+    }
+  };
+
+  const submitPronunciation = async (audioBlob) => {
+    if (!currentPronunciationWord) return;
+
+    const formData = new FormData();
+    formData.append("audio", audioBlob, "recording.webm");
+    formData.append("word_id", currentPronunciationWord.id);
+    formData.append("language_set", languageSet);
+
+    try {
+      const response = await fetch(buildUrl("practice/pronunciation"), {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Pronunciation validation failed");
+      }
+
+      const payload = await response.json();
+      const scorePercent = Math.round(payload.similarity_score * 100);
+      
+      if (payload.was_correct) {
+        setPronunciationStatus({
+          type: "success",
+          message: `Correct! You said "${payload.transcribed_text}" (${scorePercent}% match)`,
+        });
+      } else {
+        setPronunciationStatus({
+          type: "error",
+          message: `You said "${payload.transcribed_text}". Expected "${payload.expected_word}". ${payload.feedback}`,
+        });
+      }
+      setStats(payload.stats);
+    } catch (error) {
+      console.error(error);
+      setPronunciationStatus({
+        type: "error",
+        message: "Could not validate pronunciation. Please try again.",
+      });
+    }
+  };
+
+  const nextPronunciationWord = () => {
+    setPronunciationIndex((prev) => (prev + 1) % wordPool.length);
+    setPronunciationStatus(null);
   };
 
   const renderPracticePage = (directionLabel) => (
@@ -354,6 +490,12 @@ function App() {
                 <h3>Write Polish words</h3>
                 <p>Recall the Polish form from translation.</p>
               </button>
+              <button className="nav-card" onClick={() => setActivePage("pronunciation")}
+                type="button">
+                <p className="subtitle">Pronunciation</p>
+                <h3>Speak Polish words</h3>
+                <p>Practice saying words and get AI feedback.</p>
+              </button>
             </div>
           </section>
         )}
@@ -375,7 +517,7 @@ function App() {
               <div>
                 <p className="instruction-title">Validate new words</p>
                 <p className="instruction-body">
-                  The database checks every manually entered word and can expand the dictionary with GPT.
+                  Enter a single word or multiple words separated by commas. Duplicates are automatically skipped.
                 </p>
               </div>
             </div>
@@ -385,7 +527,7 @@ function App() {
                 value={manualEntry}
                 onChange={(event) => setManualEntry(event.target.value)}
                 type="text"
-                placeholder="Type Polish, English or Ukrainian word"
+                placeholder="Type words (e.g., hello, goodbye, thank you)"
               />
               <button onClick={handleManualSubmit}>Validate &amp; add</button>
             </div>
@@ -407,12 +549,17 @@ function App() {
 
             {wordPool.length > 0 && (
               <div className="word-preview">
-                <p className="subtitle">Recent entries</p>
+                <p className="subtitle">Words to practice (ordered by difficulty)</p>
                 <ul>
-                  {wordPool.slice(-4).map((word) => (
+                  {wordPool.slice(0, 6).map((word) => (
                     <li key={word.id}>
                       <span>{word.polish}</span>
                       <span>{word[languageSet]}</span>
+                      <span className="error-rate">
+                        {word.total_attempts > 0 
+                          ? `${word.error_rate}% errors (${word.total_attempts} tries)`
+                          : "New"}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -423,6 +570,72 @@ function App() {
 
         {activePage === "translation" && renderPracticePage("Translation")}
         {activePage === "writing" && renderPracticePage("Writing")}
+        
+        {activePage === "pronunciation" && (
+          <section className="panel practice-panel">
+            <div className="panel-header">
+              <div>
+                <p className="subtitle">Practice</p>
+                <h2>Pronunciation mode</h2>
+              </div>
+              <button className="secondary" onClick={() => setActivePage("home")}>
+                Back to main
+              </button>
+            </div>
+
+            {!wordPool.length && (
+              <p className="status info">
+                Add words to your session first, then return here to practice.
+              </p>
+            )}
+
+            <div className="practice-status">
+              <p className={`status ${pronunciationStatus?.type ?? "info"}`}>
+                {pronunciationStatus?.message ?? "Click Record and say the Polish word shown below."}
+              </p>
+            </div>
+
+            <div className="practice-card pronunciation-card">
+              <div className="practice-mirror">
+                <p className="subtitle">Say this word in Polish:</p>
+                <p className="prompt pronunciation-prompt">
+                  {currentPronunciationWord?.polish ?? "Add words to start practicing."}
+                </p>
+                {currentPronunciationWord && (
+                  <p className="translation-hint">
+                    ({currentPronunciationWord[languageSet]})
+                  </p>
+                )}
+              </div>
+              
+              <div className="pronunciation-controls">
+                {!isRecording ? (
+                  <button 
+                    onClick={startRecording} 
+                    disabled={!currentPronunciationWord}
+                    className="record-btn"
+                  >
+                    🎤 Record
+                  </button>
+                ) : (
+                  <button 
+                    onClick={stopRecording}
+                    className="record-btn recording"
+                  >
+                    ⏹ Stop Recording
+                  </button>
+                )}
+                <button 
+                  onClick={nextPronunciationWord} 
+                  disabled={!currentPronunciationWord || isRecording}
+                  className="secondary"
+                >
+                  Next word →
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
       </main>
     </div>
   );

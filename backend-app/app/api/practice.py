@@ -1,13 +1,18 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from sqlmodel import Session, select
 
 from app.database import engine
-from app.llm import validate_translation_via_llm
+from app.llm import (
+    validate_translation_via_llm,
+    transcribe_audio,
+    evaluate_pronunciation_via_llm,
+)
 from app.models import PracticeRecord, PracticeDirection, Word, WordLanguage, WordOption
 from app.schemas import (
     PracticeSubmission,
     PracticeValidationRequest,
     PracticeValidationResponse,
+    PronunciationValidationResponse,
     StatsResponse,
 )
 from app.utils import calculate_stats, normalize_text
@@ -109,5 +114,57 @@ def validate_practice(payload: PracticeValidationRequest) -> PracticeValidationR
             was_correct=is_correct,
             correct_answer=expected,
             matched_via=matched_via,
+            stats=calculate_stats(session),
+        )
+
+
+@router.post("/pronunciation", response_model=PronunciationValidationResponse)
+async def validate_pronunciation(
+    audio: UploadFile = File(...),
+    word_id: int = Form(...),
+    language_set: str = Form(...),
+) -> PronunciationValidationResponse:
+    """Validate pronunciation of a Polish word using OpenAI Whisper and GPT."""
+    with Session(engine) as session:
+        word = session.get(Word, word_id)
+        if not word:
+            raise HTTPException(status_code=404, detail="Word not found")
+
+        try:
+            audio_data = await audio.read()
+            transcribed_text = transcribe_audio(
+                audio_data, audio.filename or "audio.webm"
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500, detail=f"Audio transcription failed: {str(exc)}"
+            ) from exc
+
+        try:
+            evaluation = evaluate_pronunciation_via_llm(
+                expected_word=word.polish,
+                transcribed_text=transcribed_text,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        is_correct = evaluation["is_correct"]
+
+        session.add(
+            PracticeRecord(
+                word_id=word.id,
+                language_set=language_set,
+                direction=PracticeDirection.pronunciation,
+                was_correct=is_correct,
+            )
+        )
+        session.commit()
+
+        return PronunciationValidationResponse(
+            was_correct=is_correct,
+            expected_word=word.polish,
+            transcribed_text=transcribed_text,
+            feedback=evaluation["feedback"],
+            similarity_score=evaluation["similarity_score"],
             stats=calculate_stats(session),
         )
