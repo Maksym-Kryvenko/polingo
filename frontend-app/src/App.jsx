@@ -1,6 +1,40 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
+
+// Fisher-Yates shuffle algorithm
+function shuffleArray(array) {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+// Helper to render text with incorrect characters highlighted
+function renderSpellingDiff(userAnswer, correctAnswer) {
+  const result = [];
+  const maxLen = Math.max(userAnswer.length, correctAnswer.length);
+  
+  for (let i = 0; i < maxLen; i++) {
+    const userChar = userAnswer[i] || '';
+    const correctChar = correctAnswer[i] || '';
+    
+    if (userChar.toLowerCase() !== correctChar.toLowerCase()) {
+      if (userChar) {
+        result.push(<span key={i} className="char-incorrect">{userChar}</span>);
+      }
+      if (!userAnswer[i] && correctChar) {
+        result.push(<span key={`missing-${i}`} className="char-missing">{correctChar}</span>);
+      }
+    } else {
+      result.push(<span key={i} className="char-correct">{userChar}</span>);
+    }
+  }
+  
+  return result;
+}
 const LANGUAGE_LABELS = {
   english: "English",
   ukrainian: "Ukrainian",
@@ -25,6 +59,8 @@ function App() {
   const [practiceStatus, setPracticeStatus] = useState(null);
   const [stats, setStats] = useState(null);
   const [loadingStats, setLoadingStats] = useState(true);
+  const [shuffledWords, setShuffledWords] = useState([]);
+  const [lastAnswer, setLastAnswer] = useState(null); // { userAnswer, correctAnswer, alternatives, wasCorrect }
   
   // Pronunciation state
   const [isRecording, setIsRecording] = useState(false);
@@ -50,14 +86,20 @@ function App() {
     setPracticeIndex(0);
     setPronunciationStatus(null);
     setPronunciationIndex(0);
-  }, [activePage, languageSet]);
+    setLastAnswer(null);
+    
+    // Shuffle words when entering any practice mode
+    if (activePage === "translation" || activePage === "writing" || activePage === "pronunciation") {
+      setShuffledWords(shuffleArray(wordPool));
+    }
+  }, [activePage, languageSet, wordPool]);
 
   const practiceDirection =
     activePage === "translation" ? "translation" : activePage === "writing" ? "writing" : null;
   const currentWord =
-    practiceDirection && wordPool.length ? wordPool[practiceIndex % wordPool.length] : null;
+    practiceDirection && shuffledWords.length ? shuffledWords[practiceIndex % shuffledWords.length] : null;
   const currentPronunciationWord =
-    activePage === "pronunciation" && wordPool.length ? wordPool[pronunciationIndex % wordPool.length] : null;
+    activePage === "pronunciation" && shuffledWords.length ? shuffledWords[pronunciationIndex % shuffledWords.length] : null;
   const targetLabel = LANGUAGE_LABELS[languageSet];
   const prompt =
     practiceDirection === "translation" ? currentWord?.polish : currentWord?.[languageSet];
@@ -367,8 +409,39 @@ function App() {
   };
 
   const nextPronunciationWord = () => {
-    setPronunciationIndex((prev) => (prev + 1) % wordPool.length);
+    setPronunciationIndex((prev) => (prev + 1) % shuffledWords.length);
     setPronunciationStatus(null);
+  };
+
+  const handlePronunciationSkip = async () => {
+    if (!currentPronunciationWord) return;
+    
+    try {
+      const response = await fetch(buildUrl("practice/skip"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          word_id: currentPronunciationWord.id,
+          language_set: languageSet,
+          direction: "pronunciation",
+          answer: "",
+        }),
+      });
+      
+      if (response.ok) {
+        const payload = await response.json();
+        setStats(payload.stats);
+      }
+      
+      setPronunciationStatus({ 
+        type: "info", 
+        message: `Skipped. The word was "${currentPronunciationWord.polish}".` 
+      });
+    } catch (error) {
+      console.error(error);
+    }
+    
+    setPronunciationIndex((prev) => (prev + 1) % shuffledWords.length);
   };
 
   const renderPracticePage = (directionLabel) => (
@@ -383,7 +456,7 @@ function App() {
         </button>
       </div>
 
-      {!wordPool.length && (
+      {!shuffledWords.length && (
         <p className="status info">
           Add words to your session first, then return here to practice.
         </p>
@@ -393,6 +466,34 @@ function App() {
         <p className={`status ${practiceStatus?.type ?? "info"}`}>
           {practiceStatus?.message ?? "Practice results appear here after each submission."}
         </p>
+        
+        {/* Show answer details with spelling highlight for writing mode */}
+        {lastAnswer && !lastAnswer.wasCorrect && (
+          <div className="answer-details">
+            {lastAnswer.direction === "writing" && lastAnswer.userAnswer && !lastAnswer.skipped && (
+              <p className="spelling-diff">
+                Your answer: {renderSpellingDiff(lastAnswer.userAnswer, lastAnswer.correctAnswer)}
+              </p>
+            )}
+            <p className="correct-answer">
+              Correct: <strong>{lastAnswer.correctAnswer}</strong>
+            </p>
+            {lastAnswer.alternatives.length > 0 && (
+              <p className="alternatives">
+                Also accepted: {lastAnswer.alternatives.join(", ")}
+              </p>
+            )}
+          </div>
+        )}
+        
+        {/* Show alternatives even for correct answers */}
+        {lastAnswer && lastAnswer.wasCorrect && lastAnswer.alternatives.length > 0 && (
+          <div className="answer-details">
+            <p className="alternatives">
+              Other accepted answers: {lastAnswer.alternatives.join(", ")}
+            </p>
+          </div>
+        )}
       </div>
 
       <form onSubmit={handlePracticeSubmit} className="practice-card">
@@ -412,9 +513,19 @@ function App() {
           }
           disabled={!practiceDirection || !currentWord}
         />
-        <button type="submit" disabled={!practiceDirection || !currentWord}>
-          Submit answer
-        </button>
+        <div className="practice-buttons">
+          <button type="submit" disabled={!practiceDirection || !currentWord}>
+            Submit answer
+          </button>
+          <button 
+            type="button" 
+            className="skip-btn"
+            onClick={handleSkip} 
+            disabled={!practiceDirection || !currentWord}
+          >
+            Skip
+          </button>
+        </div>
       </form>
     </section>
   );
@@ -583,7 +694,7 @@ function App() {
               </button>
             </div>
 
-            {!wordPool.length && (
+            {!shuffledWords.length && (
               <p className="status info">
                 Add words to your session first, then return here to practice.
               </p>
@@ -625,6 +736,13 @@ function App() {
                     ⏹ Stop Recording
                   </button>
                 )}
+                <button 
+                  onClick={handlePronunciationSkip} 
+                  disabled={!currentPronunciationWord || isRecording}
+                  className="skip-btn"
+                >
+                  Skip
+                </button>
                 <button 
                   onClick={nextPronunciationWord} 
                   disabled={!currentPronunciationWord || isRecording}

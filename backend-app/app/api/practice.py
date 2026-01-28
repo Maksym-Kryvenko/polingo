@@ -110,10 +110,57 @@ def validate_practice(payload: PracticeValidationRequest) -> PracticeValidationR
         )
         session.commit()
 
+        # Get all alternatives for display
+        alternatives = [opt.value for opt in options if opt.value != expected]
+
         return PracticeValidationResponse(
             was_correct=is_correct,
             correct_answer=expected,
             matched_via=matched_via,
+            alternatives=alternatives,
+            stats=calculate_stats(session),
+        )
+
+
+@router.post("/skip", response_model=PracticeValidationResponse)
+def skip_practice(payload: PracticeValidationRequest) -> PracticeValidationResponse:
+    """Skip a word and record it as incorrect."""
+    with Session(engine) as session:
+        word = session.get(Word, payload.word_id)
+        if not word:
+            raise HTTPException(status_code=404, detail="Word not found")
+
+        expected = (
+            word.polish
+            if payload.direction == PracticeDirection.writing
+            else getattr(word, payload.language_set)
+        )
+
+        target_language = get_target_language(payload.direction, payload.language_set)
+        options = session.exec(
+            select(WordOption).where(
+                WordOption.word_id == word.id,
+                WordOption.language == target_language,
+            )
+        ).all()
+
+        session.add(
+            PracticeRecord(
+                word_id=word.id,
+                language_set=payload.language_set,
+                direction=payload.direction,
+                was_correct=False,
+            )
+        )
+        session.commit()
+
+        alternatives = [opt.value for opt in options if opt.value != expected]
+
+        return PracticeValidationResponse(
+            was_correct=False,
+            correct_answer=expected,
+            matched_via=None,
+            alternatives=alternatives,
             stats=calculate_stats(session),
         )
 

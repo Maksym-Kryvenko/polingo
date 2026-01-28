@@ -80,6 +80,7 @@ class PracticeValidationResponse(SQLModel):
     was_correct: bool
     correct_answer: str
     matched_via: Optional[str] = None
+    alternatives: list[str] = []
     stats: "StatsResponse"
 
 

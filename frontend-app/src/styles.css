@@ -490,3 +490,76 @@ body {
     flex-direction: column;
   }
 }
+
+/* Practice buttons layout */
+.practice-buttons {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.practice-buttons button {
+  flex: 1;
+}
+
+.skip-btn {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  color: var(--text) !important;
+}
+
+.skip-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-color: rgba(255, 255, 255, 0.4) !important;
+}
+
+/* Answer details - spelling diff and alternatives */
+.answer-details {
+  margin-top: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.answer-details p {
+  margin: 0.25rem 0;
+  font-size: 0.95rem;
+}
+
+.spelling-diff {
+  font-family: monospace;
+  font-size: 1.1rem !important;
+  letter-spacing: 0.05em;
+}
+
+.char-correct {
+  color: var(--text);
+}
+
+.char-incorrect {
+  color: #ff4d4d;
+  background: rgba(255, 77, 77, 0.2);
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+.char-missing {
+  color: #51f0a6;
+  background: rgba(81, 240, 166, 0.2);
+  border-radius: 2px;
+  padding: 0 2px;
+  text-decoration: underline;
+}
+
+.correct-answer {
+  color: var(--text);
+}
+
+.correct-answer strong {
+  color: #51f0a6;
+}
+
+.alternatives {
+  color: var(--muted);
+  font-style: italic;
+}
