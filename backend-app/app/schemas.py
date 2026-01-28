@@ -121,3 +121,74 @@ class PronunciationValidationResponse(SQLModel):
     feedback: str
     similarity_score: float
     stats: StatsResponse
+
+
+# Verb/Endings schemas
+class VerbAddRequest(SQLModel):
+    text: str  # Verb in English or Ukrainian
+    source_language: str  # "english" or "ukrainian"
+
+
+class VerbConjugationRead(SQLModel):
+    pronoun: str
+    conjugated_form: str
+
+
+class VerbRead(SQLModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    infinitive: str
+    english: str
+    ukrainian: str
+
+
+class VerbWithConjugations(SQLModel):
+    id: int
+    infinitive: str
+    english: str
+    ukrainian: str
+    conjugations: list[VerbConjugationRead]
+    total_attempts: int = 0
+    correct_attempts: int = 0
+    error_rate: float = 0.0
+
+
+class VerbAddResponse(SQLModel):
+    success: bool
+    verb: Optional[VerbWithConjugations] = None
+    message: str
+    duplicate: bool = False
+
+
+class VerbSessionState(SQLModel):
+    verbs: list[VerbWithConjugations]
+
+
+class EndingsQuestion(SQLModel):
+    verb_id: int
+    infinitive: str
+    english: str
+    ukrainian: str
+    pronoun: str
+    correct_answer: str
+    options: list[str]  # 4 shuffled options including correct
+
+
+class EndingsValidationRequest(SQLModel):
+    verb_id: int
+    pronoun: str
+    answer: str
+
+
+class EndingsValidationResponse(SQLModel):
+    was_correct: bool
+    correct_answer: str
+    stats: "EndingsStatsResponse"
+
+
+class EndingsStatsResponse(SQLModel):
+    today_percentage: float
+    trend: float
+    overall_percentage: float
+    available_verbs: int

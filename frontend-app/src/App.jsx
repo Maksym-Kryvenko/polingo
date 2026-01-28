@@ -48,6 +48,9 @@ const FIELD_LABELS = {
 
 const buildUrl = (path) => `${API_BASE_URL}/${path}`;
 
+// Auto-hide delay in milliseconds
+const STATUS_HIDE_DELAY = 5000;
+
 function App() {
   const [activePage, setActivePage] = useState("home");
   const [languageSet, setLanguageSet] = useState("english");
@@ -69,9 +72,28 @@ function App() {
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
 
+  // Timeout refs for auto-hiding status messages
+  const practiceStatusTimeoutRef = useRef(null);
+  const pronunciationStatusTimeoutRef = useRef(null);
+  const endingsStatusTimeoutRef = useRef(null);
+
+  // Add words mode selector (words vs verbs)
+  const [addMode, setAddMode] = useState("words"); // "words" or "verbs"
+  
+  // Endings/Verbs state
+  const [verbPool, setVerbPool] = useState([]);
+  const [endingsQuestion, setEndingsQuestion] = useState(null);
+  const [endingsStatus, setEndingsStatus] = useState(null);
+  const [endingsStats, setEndingsStats] = useState(null);
+  const [verbEntry, setVerbEntry] = useState("");
+  const [verbStatus, setVerbStatus] = useState(null);
+  const [verbLoading, setVerbLoading] = useState(false);
+
   useEffect(() => {
     fetchStats();
     fetchSession();
+    fetchVerbSession();
+    fetchEndingsStats();
   }, []);
 
   useEffect(() => {
@@ -86,11 +108,18 @@ function App() {
     setPracticeIndex(0);
     setPronunciationStatus(null);
     setPronunciationIndex(0);
+    setEndingsStatus(null);
+    setEndingsQuestion(null);
     setLastAnswer(null);
     
     // Shuffle words when entering any practice mode
     if (activePage === "translation" || activePage === "writing" || activePage === "pronunciation") {
       setShuffledWords(shuffleArray(wordPool));
+    }
+    
+    // Fetch first endings question when entering endings mode
+    if (activePage === "endings") {
+      fetchEndingsQuestion();
     }
   }, [activePage, languageSet, wordPool]);
 
@@ -150,6 +179,44 @@ function App() {
       setWordPool(payload.words ?? []);
     } catch (error) {
       console.error(error);
+    }
+  }
+
+  async function fetchVerbSession() {
+    try {
+      const response = await fetch(buildUrl("verbs/session"));
+      if (!response.ok) {
+        throw new Error("Verb session fetch failed");
+      }
+      const payload = await response.json();
+      setVerbPool(payload.verbs ?? []);
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  async function fetchEndingsStats() {
+    try {
+      const response = await fetch(buildUrl("verbs/stats"));
+      if (response.ok) {
+        setEndingsStats(await response.json());
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  async function fetchEndingsQuestion() {
+    try {
+      const response = await fetch(buildUrl("verbs/question"));
+      if (!response.ok) {
+        throw new Error("Could not get question");
+      }
+      const payload = await response.json();
+      setEndingsQuestion(payload);
+    } catch (error) {
+      console.error(error);
+      setEndingsStatus({ type: "error", message: "Add verbs to your session first." });
     }
   }
 
@@ -283,10 +350,159 @@ function App() {
     }
   };
 
+  const handleVerbSubmit = async () => {
+    const trimmed = verbEntry.trim();
+    if (!trimmed) {
+      setVerbStatus({ type: "error", message: "Type a verb to add." });
+      return;
+    }
+
+    setVerbLoading(true);
+    try {
+      const response = await fetch(buildUrl("verbs/add"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: trimmed, source_language: languageSet }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Verb addition failed");
+      }
+
+      const payload = await response.json();
+      
+      if (!payload.success) {
+        setVerbStatus({ type: "error", message: payload.message });
+        return;
+      }
+
+      // Add to session if not duplicate
+      if (!payload.duplicate && payload.verb) {
+        await fetch(buildUrl(`verbs/session?verb_id=${payload.verb.id}`), {
+          method: "POST",
+        });
+      } else if (payload.verb) {
+        // Even if duplicate, add to session
+        await fetch(buildUrl(`verbs/session?verb_id=${payload.verb.id}`), {
+          method: "POST",
+        });
+      }
+
+      await fetchVerbSession();
+      
+      const conjugationList = payload.verb?.conjugations
+        ?.map(c => `${c.pronoun}: ${c.conjugated_form}`)
+        ?.join(", ");
+      
+      setVerbStatus({
+        type: payload.duplicate ? "info" : "success",
+        message: `${payload.message} (${conjugationList})`,
+      });
+    } catch (error) {
+      console.error(error);
+      setVerbStatus({
+        type: "error",
+        message: "Could not add verb. Try again.",
+      });
+    } finally {
+      setVerbEntry("");
+      setVerbLoading(false);
+    }
+  };
+
+  const handleEndingsAnswer = async (selectedAnswer) => {
+    if (!endingsQuestion) return;
+
+    // Clear any existing timeout
+    if (endingsStatusTimeoutRef.current) {
+      clearTimeout(endingsStatusTimeoutRef.current);
+    }
+
+    try {
+      const response = await fetch(buildUrl("verbs/validate"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          verb_id: endingsQuestion.verb_id,
+          pronoun: endingsQuestion.pronoun,
+          answer: selectedAnswer,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Validation failed");
+      }
+
+      const payload = await response.json();
+      
+      if (payload.was_correct) {
+        setEndingsStatus({ type: "success", message: "Correct! Well done." });
+      } else {
+        setEndingsStatus({
+          type: "error",
+          message: `Incorrect. The answer was "${payload.correct_answer}".`,
+        });
+      }
+      
+      setEndingsStats(payload.stats);
+      
+      // Auto-hide after 5 seconds and fetch next question
+      endingsStatusTimeoutRef.current = setTimeout(() => {
+        fetchEndingsQuestion();
+        setEndingsStatus(null);
+      }, STATUS_HIDE_DELAY);
+    } catch (error) {
+      console.error(error);
+      setEndingsStatus({ type: "error", message: "Could not validate answer." });
+    }
+  };
+
+  const handleEndingsSkip = async () => {
+    if (!endingsQuestion) return;
+
+    // Clear any existing timeout
+    if (endingsStatusTimeoutRef.current) {
+      clearTimeout(endingsStatusTimeoutRef.current);
+    }
+
+    try {
+      // Record as incorrect
+      await fetch(buildUrl("verbs/validate"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          verb_id: endingsQuestion.verb_id,
+          pronoun: endingsQuestion.pronoun,
+          answer: "", // Empty = wrong
+        }),
+      });
+      
+      setEndingsStatus({
+        type: "info",
+        message: `Skipped. The answer was "${endingsQuestion.correct_answer}".`,
+      });
+      
+      await fetchEndingsStats();
+      
+      // Auto-hide after 5 seconds and fetch next question
+      endingsStatusTimeoutRef.current = setTimeout(() => {
+        fetchEndingsQuestion();
+        setEndingsStatus(null);
+      }, STATUS_HIDE_DELAY);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   const handlePracticeSubmit = async (event) => {
     event?.preventDefault?.();
     if (!currentWord || !practiceDirection) {
       return;
+    }
+
+    // Clear any existing timeout
+    if (practiceStatusTimeoutRef.current) {
+      clearTimeout(practiceStatusTimeoutRef.current);
     }
 
     if (!answer.trim()) {
@@ -316,6 +532,22 @@ function App() {
         : `The correct answer is “${payload.correct_answer}”.`;
       setPracticeStatus({ type: payload.was_correct ? "success" : "error", message: baseMessage });
       setStats(payload.stats);
+      
+      // Store answer details for display
+      setLastAnswer({
+        userAnswer: answer,
+        correctAnswer: payload.correct_answer,
+        alternatives: payload.alternatives || [],
+        wasCorrect: payload.was_correct,
+        direction: practiceDirection,
+        skipped: false,
+      });
+      
+      // Auto-hide after 5 seconds
+      practiceStatusTimeoutRef.current = setTimeout(() => {
+        setPracticeStatus(null);
+        setLastAnswer(null);
+      }, STATUS_HIDE_DELAY);
     } catch (error) {
       console.error(error);
       setPracticeStatus({
@@ -325,6 +557,62 @@ function App() {
     }
     setAnswer("");
     setPracticeIndex((previous) => (previous + 1) % wordPool.length);
+  };
+
+  const handleSkip = async () => {
+    if (!currentWord || !practiceDirection) {
+      return;
+    }
+
+    // Clear any existing timeout
+    if (practiceStatusTimeoutRef.current) {
+      clearTimeout(practiceStatusTimeoutRef.current);
+    }
+
+    try {
+      const response = await fetch(buildUrl("practice/skip"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          word_id: currentWord.id,
+          language_set: languageSet,
+          direction: practiceDirection,
+          answer: "",
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Skip failed");
+      }
+
+      const payload = await response.json();
+      
+      setLastAnswer({
+        userAnswer: "",
+        correctAnswer: payload.correct_answer,
+        alternatives: payload.alternatives || [],
+        wasCorrect: false,
+        direction: practiceDirection,
+        skipped: true,
+      });
+      
+      setPracticeStatus({ type: "info", message: "Skipped. The answer was:" });
+      setStats(payload.stats);
+      
+      // Auto-hide after 5 seconds
+      practiceStatusTimeoutRef.current = setTimeout(() => {
+        setPracticeStatus(null);
+        setLastAnswer(null);
+      }, STATUS_HIDE_DELAY);
+    } catch (error) {
+      console.error(error);
+      setPracticeStatus({
+        type: "error",
+        message: "Could not skip. Try again.",
+      });
+    }
+    setAnswer("");
+    setPracticeIndex((previous) => (previous + 1) % shuffledWords.length);
   };
 
   const startRecording = async () => {
@@ -369,6 +657,11 @@ function App() {
   const submitPronunciation = async (audioBlob) => {
     if (!currentPronunciationWord) return;
 
+    // Clear any existing timeout
+    if (pronunciationStatusTimeoutRef.current) {
+      clearTimeout(pronunciationStatusTimeoutRef.current);
+    }
+
     const formData = new FormData();
     formData.append("audio", audioBlob, "recording.webm");
     formData.append("word_id", currentPronunciationWord.id);
@@ -399,6 +692,11 @@ function App() {
         });
       }
       setStats(payload.stats);
+      
+      // Auto-hide after 5 seconds
+      pronunciationStatusTimeoutRef.current = setTimeout(() => {
+        setPronunciationStatus(null);
+      }, STATUS_HIDE_DELAY);
     } catch (error) {
       console.error(error);
       setPronunciationStatus({
@@ -415,6 +713,11 @@ function App() {
 
   const handlePronunciationSkip = async () => {
     if (!currentPronunciationWord) return;
+    
+    // Clear any existing timeout
+    if (pronunciationStatusTimeoutRef.current) {
+      clearTimeout(pronunciationStatusTimeoutRef.current);
+    }
     
     try {
       const response = await fetch(buildUrl("practice/skip"), {
@@ -437,6 +740,11 @@ function App() {
         type: "info", 
         message: `Skipped. The word was "${currentPronunciationWord.polish}".` 
       });
+      
+      // Auto-hide after 5 seconds
+      pronunciationStatusTimeoutRef.current = setTimeout(() => {
+        setPronunciationStatus(null);
+      }, STATUS_HIDE_DELAY);
     } catch (error) {
       console.error(error);
     }
@@ -607,6 +915,12 @@ function App() {
                 <h3>Speak Polish words</h3>
                 <p>Practice saying words and get AI feedback.</p>
               </button>
+              <button className="nav-card" onClick={() => setActivePage("endings")}
+                type="button">
+                <p className="subtitle">Endings</p>
+                <h3>Practice verb conjugations</h3>
+                <p>Learn how verbs change with ja, ty, on/ona, my, wy, oni.</p>
+              </button>
             </div>
           </section>
         )}
@@ -623,58 +937,128 @@ function App() {
               </button>
             </div>
 
-            <div className="instruction-card">
-              <p className="step">1</p>
-              <div>
-                <p className="instruction-title">Validate new words</p>
-                <p className="instruction-body">
-                  Enter a single word or multiple words separated by commas. Duplicates are automatically skipped.
-                </p>
-              </div>
+            {/* Mode selector tabs */}
+            <div className="mode-tabs">
+              <button 
+                className={`mode-tab ${addMode === "words" ? "active" : ""}`}
+                onClick={() => setAddMode("words")}
+                type="button"
+              >
+                Words
+              </button>
+              <button 
+                className={`mode-tab ${addMode === "verbs" ? "active" : ""}`}
+                onClick={() => setAddMode("verbs")}
+                type="button"
+              >
+                Verbs (Endings)
+              </button>
             </div>
 
-            <div className="manual-entry">
-              <input
-                value={manualEntry}
-                onChange={(event) => setManualEntry(event.target.value)}
-                type="text"
-                placeholder="Type words (e.g., hello, goodbye, thank you)"
-              />
-              <button onClick={handleManualSubmit}>Validate &amp; add</button>
-            </div>
-            {manualStatus && <p className={`status ${manualStatus.type}`}>{manualStatus.message}</p>}
+            {addMode === "words" && (
+              <>
+                <div className="instruction-card">
+                  <p className="step">1</p>
+                  <div>
+                    <p className="instruction-title">Validate new words</p>
+                    <p className="instruction-body">
+                      Enter a single word or multiple words separated by commas. Duplicates are automatically skipped.
+                    </p>
+                  </div>
+                </div>
 
-            <div className="instruction-card">
-              <p className="step">2</p>
-              <div>
-                <p className="instruction-title">Or load the starter list</p>
-                <p className="instruction-body">
-                  These first 10 words are guaranteed to be in the database and are saved to your session.
-                </p>
-              </div>
-            </div>
+                <div className="manual-entry">
+                  <input
+                    value={manualEntry}
+                    onChange={(event) => setManualEntry(event.target.value)}
+                    type="text"
+                    placeholder="Type words (e.g., hello, goodbye, thank you)"
+                  />
+                  <button onClick={handleManualSubmit}>Validate &amp; add</button>
+                </div>
+                {manualStatus && <p className={`status ${manualStatus.type}`}>{manualStatus.message}</p>}
 
-            <button className="secondary" onClick={handleLoadInitial}>
-              Load starter set
-            </button>
+                <div className="instruction-card">
+                  <p className="step">2</p>
+                  <div>
+                    <p className="instruction-title">Or load the starter list</p>
+                    <p className="instruction-body">
+                      These first 10 words are guaranteed to be in the database and are saved to your session.
+                    </p>
+                  </div>
+                </div>
 
-            {wordPool.length > 0 && (
-              <div className="word-preview">
-                <p className="subtitle">Words to practice (ordered by difficulty)</p>
-                <ul>
-                  {wordPool.slice(0, 6).map((word) => (
-                    <li key={word.id}>
-                      <span>{word.polish}</span>
-                      <span>{word[languageSet]}</span>
-                      <span className="error-rate">
-                        {word.total_attempts > 0 
-                          ? `${word.error_rate}% errors (${word.total_attempts} tries)`
-                          : "New"}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+                <button className="secondary" onClick={handleLoadInitial}>
+                  Load starter set
+                </button>
+
+                {wordPool.length > 0 && (
+                  <div className="word-preview">
+                    <p className="subtitle">Words to practice (ordered by difficulty)</p>
+                    <ul>
+                      {wordPool.slice(0, 6).map((word) => (
+                        <li key={word.id}>
+                          <span>{word.polish}</span>
+                          <span>{word[languageSet]}</span>
+                          <span className="error-rate">
+                            {word.total_attempts > 0 
+                              ? `${word.error_rate}% errors (${word.total_attempts} tries)`
+                              : "New"}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
+            )}
+
+            {addMode === "verbs" && (
+              <>
+                <div className="instruction-card">
+                  <p className="step">1</p>
+                  <div>
+                    <p className="instruction-title">Add verbs for conjugation practice</p>
+                    <p className="instruction-body">
+                      Enter a verb in {languageSet === "english" ? "English" : "Ukrainian"} (e.g., "to do", "to eat"). 
+                      The system will generate all Polish conjugations automatically.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="manual-entry">
+                  <input
+                    value={verbEntry}
+                    onChange={(event) => setVerbEntry(event.target.value)}
+                    type="text"
+                    placeholder={`Type a verb in ${languageSet === "english" ? "English" : "Ukrainian"} (e.g., to do, to eat)`}
+                    disabled={verbLoading}
+                  />
+                  <button onClick={handleVerbSubmit} disabled={verbLoading}>
+                    {verbLoading ? "Generating..." : "Add verb"}
+                  </button>
+                </div>
+                {verbStatus && <p className={`status ${verbStatus.type}`}>{verbStatus.message}</p>}
+
+                {verbPool.length > 0 && (
+                  <div className="word-preview">
+                    <p className="subtitle">Verbs to practice (ordered by difficulty)</p>
+                    <ul>
+                      {verbPool.slice(0, 6).map((verb) => (
+                        <li key={verb.id}>
+                          <span>{verb.infinitive}</span>
+                          <span>{verb[languageSet]}</span>
+                          <span className="error-rate">
+                            {verb.total_attempts > 0 
+                              ? `${verb.error_rate}% errors (${verb.total_attempts} tries)`
+                              : "New"}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
             )}
           </section>
         )}
@@ -752,6 +1136,80 @@ function App() {
                 </button>
               </div>
             </div>
+          </section>
+        )}
+
+        {activePage === "endings" && (
+          <section className="panel practice-panel">
+            <div className="panel-header">
+              <div>
+                <p className="subtitle">Practice</p>
+                <h2>Endings mode</h2>
+              </div>
+              <button className="secondary" onClick={() => setActivePage("home")}>
+                Back to main
+              </button>
+            </div>
+
+            {!verbPool.length && (
+              <p className="status info">
+                Add verbs to your session first. Go to "Add words" and select the "Verbs" tab.
+              </p>
+            )}
+
+            {endingsStats && (
+              <div className="endings-stats">
+                <span>Today: {endingsStats.today_percentage}%</span>
+                <span>Overall: {endingsStats.overall_percentage}%</span>
+                <span>Verbs: {verbPool.length}</span>
+              </div>
+            )}
+
+            <div className="practice-status">
+              <p className={`status ${endingsStatus?.type ?? "info"}`}>
+                {endingsStatus?.message ?? "Select the correct conjugation for the pronoun shown."}
+              </p>
+            </div>
+
+            {endingsQuestion && (
+              <div className="practice-card endings-card">
+                <div className="practice-mirror">
+                  <p className="subtitle">
+                    {endingsQuestion.infinitive} ({endingsQuestion[languageSet]})
+                  </p>
+                  <p className="prompt endings-prompt">
+                    <span className="pronoun">{endingsQuestion.pronoun}</span> ___
+                  </p>
+                </div>
+                
+                <div className="endings-options">
+                  {endingsQuestion.options.map((option, index) => (
+                    <button
+                      key={index}
+                      className="endings-option"
+                      onClick={() => handleEndingsAnswer(option)}
+                      disabled={endingsStatus !== null}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+
+                <button 
+                  className="skip-btn endings-skip"
+                  onClick={handleEndingsSkip}
+                  disabled={endingsStatus !== null}
+                >
+                  Skip (I don't know)
+                </button>
+              </div>
+            )}
+
+            {!endingsQuestion && verbPool.length > 0 && (
+              <div className="practice-card">
+                <p>Loading question...</p>
+              </div>
+            )}
           </section>
         )}
       </main>

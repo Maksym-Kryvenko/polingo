@@ -1,6 +1,16 @@
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.models import UserSession, Word
+from app.models import (
+    UserSession,
+    UserSessionVerb,
+    UserSessionWord,
+    Verb,
+    VerbConjugation,
+    VerbPracticeRecord,
+    Word,
+    WordOption,
+    PracticeRecord,
+)
 from app.seed import seed_words
 
 DATABASE_URL = "sqlite:////app/data/polingo.db"

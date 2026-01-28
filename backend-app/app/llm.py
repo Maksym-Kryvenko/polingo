@@ -139,3 +139,44 @@ def evaluate_pronunciation_via_llm(
         "feedback": str(payload.get("feedback", "")),
         "similarity_score": float(payload.get("similarity_score", 0.0)),
     }
+
+
+def generate_verb_conjugations_via_llm(
+    verb: str, source_language: str
+) -> Dict[str, Any]:
+    """Generate Polish verb conjugations from English or Ukrainian input."""
+    client = get_openai_client()
+
+    prompt = (
+        "You are a Polish language expert. Given a verb in English or Ukrainian, "
+        "provide the Polish infinitive and all present tense conjugations. "
+        "Return JSON only with keys: "
+        "infinitive (Polish infinitive form), "
+        "english (English translation), "
+        "ukrainian (Ukrainian translation), "
+        "conjugations (object with keys: ja, ty, on_ona_ono, my, wy, oni_one - each containing the conjugated Polish form). "
+        'Example for \'to do\': {"infinitive": "robić", "english": "to do", "ukrainian": "робити", '
+        '"conjugations": {"ja": "robię", "ty": "robisz", "on_ona_ono": "robi", "my": "robimy", "wy": "robicie", "oni_one": "robią"}}'
+    )
+
+    user_message = f"Verb ({source_language}): {verb}"
+
+    response = client.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=[
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": user_message},
+        ],
+        temperature=0.2,
+        response_format={"type": "json_object"},
+    )
+
+    content = response.choices[0].message.content or "{}"
+    payload: Dict[str, Any] = json.loads(content)
+
+    return {
+        "infinitive": str(payload.get("infinitive", "")),
+        "english": str(payload.get("english", "")),
+        "ukrainian": str(payload.get("ukrainian", "")),
+        "conjugations": payload.get("conjugations", {}),
+    }
