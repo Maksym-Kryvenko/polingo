@@ -89,12 +89,25 @@ function App() {
   const [verbStatus, setVerbStatus] = useState(null);
   const [verbLoading, setVerbLoading] = useState(false);
 
+  // Manage words state
+  const [allWords, setAllWords] = useState([]);
+  const [allVerbs, setAllVerbs] = useState([]);
+  const [manageMode, setManageMode] = useState("words"); // "words" or "verbs"
+
   useEffect(() => {
     fetchStats();
     fetchSession();
     fetchVerbSession();
     fetchEndingsStats();
   }, []);
+
+  useEffect(() => {
+    // Fetch all words/verbs when entering manage page
+    if (activePage === "manage") {
+      fetchAllWords();
+      fetchAllVerbs();
+    }
+  }, [activePage]);
 
   useEffect(() => {
     if (!wordPool.length) {
@@ -219,6 +232,66 @@ function App() {
       setEndingsStatus({ type: "error", message: "Add verbs to your session first." });
     }
   }
+
+  async function fetchAllWords() {
+    try {
+      const response = await fetch(buildUrl("session/words/all"));
+      if (response.ok) {
+        const payload = await response.json();
+        setAllWords(payload.words ?? []);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  async function fetchAllVerbs() {
+    try {
+      const response = await fetch(buildUrl("verbs/session/all"));
+      if (response.ok) {
+        const payload = await response.json();
+        setAllVerbs(payload.verbs ?? []);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  const handleToggleWord = async (wordId, enabled) => {
+    try {
+      const response = await fetch(buildUrl("session/words/toggle"), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ word_id: wordId, enabled }),
+      });
+      if (response.ok) {
+        const payload = await response.json();
+        setAllWords(payload.words ?? []);
+        // Also refresh the practice word pool
+        await fetchSession();
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleToggleVerb = async (verbId, enabled) => {
+    try {
+      const response = await fetch(buildUrl("verbs/session/toggle"), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ verb_id: verbId, enabled }),
+      });
+      if (response.ok) {
+        const payload = await response.json();
+        setAllVerbs(payload.verbs ?? []);
+        // Also refresh the practice verb pool
+        await fetchVerbSession();
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   const handleLanguageChange = async (value) => {
     setLanguageSet(value);
@@ -925,6 +998,12 @@ function App() {
                 <h3>Practice verb conjugations</h3>
                 <p>Learn how verbs change with ja, ty, on/ona, my, wy, oni.</p>
               </button>
+              <button className="nav-card" onClick={() => setActivePage("manage")}
+                type="button">
+                <p className="subtitle">Manage</p>
+                <h3>Review your word list</h3>
+                <p>View all words and verbs, toggle them on/off for practice.</p>
+              </button>
             </div>
           </section>
         )}
@@ -1210,6 +1289,102 @@ function App() {
             {!endingsQuestion && verbPool.length > 0 && (
               <div className="practice-card">
                 <p>Loading question...</p>
+              </div>
+            )}
+          </section>
+        )}
+
+        {activePage === "manage" && (
+          <section className="panel">
+            <div className="panel-header">
+              <div>
+                <p className="subtitle">Manage</p>
+                <h2>Your word list</h2>
+              </div>
+              <button className="secondary" onClick={() => setActivePage("home")}>
+                Back to main
+              </button>
+            </div>
+
+            {/* Mode selector tabs */}
+            <div className="mode-tabs">
+              <button 
+                className={`mode-tab ${manageMode === "words" ? "active" : ""}`}
+                onClick={() => setManageMode("words")}
+                type="button"
+              >
+                Words ({allWords.length})
+              </button>
+              <button 
+                className={`mode-tab ${manageMode === "verbs" ? "active" : ""}`}
+                onClick={() => setManageMode("verbs")}
+                type="button"
+              >
+                Verbs ({allVerbs.length})
+              </button>
+            </div>
+
+            {manageMode === "words" && (
+              <div className="manage-list">
+                {allWords.length === 0 ? (
+                  <p className="status info">No words in your session yet. Add some words first!</p>
+                ) : (
+                  <ul className="word-manage-list">
+                    {allWords.map((word) => (
+                      <li key={word.id} className={`word-manage-item ${!word.enabled ? "disabled" : ""}`}>
+                        <div className="word-info">
+                          <span className="word-polish">{word.polish}</span>
+                          <span className="word-translation">{word[languageSet]}</span>
+                        </div>
+                        <div className="word-stats">
+                          {word.total_attempts > 0 
+                            ? `${word.error_rate}% errors (${word.total_attempts} tries)`
+                            : "New"}
+                        </div>
+                        <label className="toggle-switch">
+                          <input
+                            type="checkbox"
+                            checked={word.enabled}
+                            onChange={(e) => handleToggleWord(word.id, e.target.checked)}
+                          />
+                          <span className="toggle-slider"></span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            {manageMode === "verbs" && (
+              <div className="manage-list">
+                {allVerbs.length === 0 ? (
+                  <p className="status info">No verbs in your session yet. Add some verbs first!</p>
+                ) : (
+                  <ul className="word-manage-list">
+                    {allVerbs.map((verb) => (
+                      <li key={verb.id} className={`word-manage-item ${!verb.enabled ? "disabled" : ""}`}>
+                        <div className="word-info">
+                          <span className="word-polish">{verb.infinitive}</span>
+                          <span className="word-translation">{verb[languageSet]}</span>
+                        </div>
+                        <div className="word-stats">
+                          {verb.total_attempts > 0 
+                            ? `${verb.error_rate}% errors (${verb.total_attempts} tries)`
+                            : "New"}
+                        </div>
+                        <label className="toggle-switch">
+                          <input
+                            type="checkbox"
+                            checked={verb.enabled}
+                            onChange={(e) => handleToggleVerb(verb.id, e.target.checked)}
+                          />
+                          <span className="toggle-slider"></span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )}
           </section>

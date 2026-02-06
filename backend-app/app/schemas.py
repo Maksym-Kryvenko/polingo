@@ -27,6 +27,7 @@ class WordWithStats(SQLModel):
     total_attempts: int = 0
     correct_attempts: int = 0
     error_rate: float = 0.0  # Higher = more errors
+    enabled: bool = True
 
 
 class WordCheckRequest(SQLModel):
@@ -152,6 +153,7 @@ class VerbWithConjugations(SQLModel):
     total_attempts: int = 0
     correct_attempts: int = 0
     error_rate: float = 0.0
+    enabled: bool = True
 
 
 class VerbAddResponse(SQLModel):
@@ -192,3 +194,13 @@ class EndingsStatsResponse(SQLModel):
     trend: float
     overall_percentage: float
     available_verbs: int
+
+
+class WordToggleRequest(SQLModel):
+    word_id: int
+    enabled: bool
+
+
+class VerbToggleRequest(SQLModel):
+    verb_id: int
+    enabled: bool

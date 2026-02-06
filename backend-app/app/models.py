@@ -62,6 +62,7 @@ class UserSessionWord(SQLModel, table=True):
     session_id: int = Field(foreign_key="usersession.id")
     word_id: int = Field(foreign_key="word.id")
     added_at: datetime = Field(default_factory=datetime.utcnow)
+    enabled: bool = Field(default=True)
 
 
 class Pronoun(str, Enum):
@@ -105,3 +106,4 @@ class UserSessionVerb(SQLModel, table=True):
     session_id: int = Field(foreign_key="usersession.id")
     verb_id: int = Field(foreign_key="verb.id")
     added_at: datetime = Field(default_factory=datetime.utcnow)
+    enabled: bool = Field(default=True)

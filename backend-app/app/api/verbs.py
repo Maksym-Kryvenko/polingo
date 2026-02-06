@@ -23,6 +23,7 @@ from app.schemas import (
     VerbAddResponse,
     VerbConjugationRead,
     VerbSessionState,
+    VerbToggleRequest,
     VerbWithConjugations,
 )
 
@@ -39,7 +40,7 @@ PRONOUN_MAP = {
 
 
 def get_verb_with_conjugations_and_stats(
-    session: Session, verb: Verb
+    session: Session, verb: Verb, enabled: bool = True
 ) -> VerbWithConjugations:
     """Get a verb with its conjugations and practice stats."""
     conjugations = session.exec(
@@ -75,6 +76,7 @@ def get_verb_with_conjugations_and_stats(
         total_attempts=total,
         correct_attempts=correct,
         error_rate=error_rate,
+        enabled=enabled,
     )
 
 
@@ -209,21 +211,26 @@ def add_verb(payload: VerbAddRequest) -> VerbAddResponse:
 
 @router.get("/session", response_model=VerbSessionState)
 def get_verb_session() -> VerbSessionState:
-    """Get all verbs in the user's session."""
+    """Get all enabled verbs in the user's session."""
     with Session(engine) as session:
         user_session = session.exec(select(UserSession)).first()
         if not user_session:
             return VerbSessionState(verbs=[])
 
         session_verbs = session.exec(
-            select(UserSessionVerb).where(UserSessionVerb.session_id == user_session.id)
+            select(UserSessionVerb).where(
+                UserSessionVerb.session_id == user_session.id,
+                UserSessionVerb.enabled == True,
+            )
         ).all()
 
         verbs = []
         for sv in session_verbs:
             verb = session.get(Verb, sv.verb_id)
             if verb:
-                verbs.append(get_verb_with_conjugations_and_stats(session, verb))
+                verbs.append(
+                    get_verb_with_conjugations_and_stats(session, verb, sv.enabled)
+                )
 
         # Sort by error rate descending (most errors first)
         verbs.sort(key=lambda v: (-v.error_rate, -v.total_attempts))
@@ -269,7 +276,10 @@ def get_endings_question() -> EndingsQuestion:
             raise HTTPException(status_code=400, detail="No session found")
 
         session_verbs = session.exec(
-            select(UserSessionVerb).where(UserSessionVerb.session_id == user_session.id)
+            select(UserSessionVerb).where(
+                UserSessionVerb.session_id == user_session.id,
+                UserSessionVerb.enabled == True,
+            )
         ).all()
 
         if not session_verbs:
@@ -373,3 +383,53 @@ def get_endings_stats() -> EndingsStatsResponse:
     """Get endings practice statistics."""
     with Session(engine) as session:
         return calculate_endings_stats(session)
+
+
+@router.get("/session/all", response_model=VerbSessionState)
+def get_all_verbs() -> VerbSessionState:
+    """Get all verbs including disabled ones for management."""
+    with Session(engine) as session:
+        user_session = session.exec(select(UserSession)).first()
+        if not user_session:
+            return VerbSessionState(verbs=[])
+
+        session_verbs = session.exec(
+            select(UserSessionVerb).where(UserSessionVerb.session_id == user_session.id)
+        ).all()
+
+        verbs = []
+        for sv in session_verbs:
+            verb = session.get(Verb, sv.verb_id)
+            if verb:
+                verbs.append(
+                    get_verb_with_conjugations_and_stats(session, verb, sv.enabled)
+                )
+
+        # Sort by error rate descending (most errors first)
+        verbs.sort(key=lambda v: (-v.error_rate, -v.total_attempts))
+
+        return VerbSessionState(verbs=verbs)
+
+
+@router.put("/session/toggle", response_model=VerbSessionState)
+def toggle_verb(payload: VerbToggleRequest) -> VerbSessionState:
+    """Enable or disable a verb in the session."""
+    with Session(engine) as session:
+        user_session = session.exec(select(UserSession)).first()
+        if not user_session:
+            raise HTTPException(status_code=404, detail="No session found")
+
+        session_verb = session.exec(
+            select(UserSessionVerb).where(
+                UserSessionVerb.session_id == user_session.id,
+                UserSessionVerb.verb_id == payload.verb_id,
+            )
+        ).first()
+        if not session_verb:
+            raise HTTPException(status_code=404, detail="Verb not in session")
+        session_verb.enabled = payload.enabled
+        session.add(session_verb)
+        session.commit()
+
+        # Return all verbs (including disabled) for management view
+        return get_all_verbs()

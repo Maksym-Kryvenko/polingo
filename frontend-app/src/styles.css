@@ -654,3 +654,109 @@ body {
   width: 100%;
   margin-top: 0.5rem;
 }
+
+/* Manage words page styles */
+.manage-list {
+  margin-top: 1rem;
+}
+
+.word-manage-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.word-manage-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.word-manage-item.disabled {
+  opacity: 0.5;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.word-manage-item .word-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.word-manage-item .word-polish {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.word-manage-item .word-translation {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.word-manage-item .word-stats {
+  font-size: 0.8rem;
+  color: var(--muted);
+  min-width: 120px;
+  text-align: right;
+}
+
+/* Toggle switch */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 26px;
+  flex-shrink: 0;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.15);
+  transition: 0.3s;
+  border-radius: 26px;
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  bottom: 3px;
+  background-color: var(--text);
+  transition: 0.3s;
+  border-radius: 50%;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background-color: var(--accent-strong);
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+  transform: translateX(22px);
+}
+
+.toggle-switch input:focus + .toggle-slider {
+  box-shadow: 0 0 3px var(--accent-strong);
+}

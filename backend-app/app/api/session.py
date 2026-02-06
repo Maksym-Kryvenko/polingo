@@ -11,6 +11,7 @@ from app.schemas import (
     SessionState,
     SessionWordAdd,
     SessionWordBulkAdd,
+    WordToggleRequest,
     WordWithStats,
 )
 
@@ -27,7 +28,9 @@ def get_or_create_session(session: Session) -> UserSession:
     return state
 
 
-def get_words_with_stats(session: Session, user_session_id: int) -> list[WordWithStats]:
+def get_words_with_stats(
+    session: Session, user_session_id: int, enabled_only: bool = False
+) -> list[WordWithStats]:
     """Get words ordered by error rate (highest errors first)."""
     # Subquery for word statistics
     stats_subquery = (
@@ -53,32 +56,37 @@ def get_words_with_stats(session: Session, user_session_id: int) -> list[WordWit
             func.coalesce(stats_subquery.c.correct_attempts, 0).label(
                 "correct_attempts"
             ),
+            UserSessionWord.enabled,
         )
         .join(UserSessionWord, UserSessionWord.word_id == Word.id)
         .outerjoin(stats_subquery, stats_subquery.c.word_id == Word.id)
         .where(UserSessionWord.session_id == user_session_id)
-        .order_by(
-            # Order by error rate descending (words with more errors first)
-            # error_rate = (total - correct) / total, but handle division by zero
-            # Words with no attempts go last
-            desc(
-                case(
-                    (func.coalesce(stats_subquery.c.total_attempts, 0) == 0, -1),
-                    else_=(
-                        (
-                            func.coalesce(stats_subquery.c.total_attempts, 0)
-                            - func.coalesce(stats_subquery.c.correct_attempts, 0)
-                        )
-                        * 1.0
-                        / func.coalesce(stats_subquery.c.total_attempts, 1)
-                    ),
-                )
-            ),
-            # Secondary sort: more attempts = higher priority
-            desc(func.coalesce(stats_subquery.c.total_attempts, 0)),
-            # Tertiary: by added_at for new words
-            UserSessionWord.added_at,
-        )
+    )
+
+    if enabled_only:
+        statement = statement.where(UserSessionWord.enabled == True)
+
+    statement = statement.order_by(
+        # Order by error rate descending (words with more errors first)
+        # error_rate = (total - correct) / total, but handle division by zero
+        # Words with no attempts go last
+        desc(
+            case(
+                (func.coalesce(stats_subquery.c.total_attempts, 0) == 0, -1),
+                else_=(
+                    (
+                        func.coalesce(stats_subquery.c.total_attempts, 0)
+                        - func.coalesce(stats_subquery.c.correct_attempts, 0)
+                    )
+                    * 1.0
+                    / func.coalesce(stats_subquery.c.total_attempts, 1)
+                ),
+            )
+        ),
+        # Secondary sort: more attempts = higher priority
+        desc(func.coalesce(stats_subquery.c.total_attempts, 0)),
+        # Tertiary: by added_at for new words
+        UserSessionWord.added_at,
     )
 
     rows = session.exec(statement).all()
@@ -98,6 +106,7 @@ def get_words_with_stats(session: Session, user_session_id: int) -> list[WordWit
                 total_attempts=total,
                 correct_attempts=correct,
                 error_rate=round(error_rate, 1),
+                enabled=row.enabled,
             )
         )
 
@@ -108,7 +117,7 @@ def get_words_with_stats(session: Session, user_session_id: int) -> list[WordWit
 def get_session_state() -> SessionState:
     with Session(engine) as session:
         state = get_or_create_session(session)
-        words = get_words_with_stats(session, state.id)
+        words = get_words_with_stats(session, state.id, enabled_only=True)
         return SessionState(language_set=state.language_set, words=words)
 
 
@@ -121,7 +130,7 @@ def update_language(payload: SessionLanguageUpdate) -> SessionState:
         session.add(state)
         session.commit()
         session.refresh(state)
-        words = get_words_with_stats(session, state.id)
+        words = get_words_with_stats(session, state.id, enabled_only=True)
         return SessionState(language_set=state.language_set, words=words)
 
 
@@ -141,7 +150,7 @@ def add_word(payload: SessionWordAdd) -> SessionState:
         if not existing:
             session.add(UserSessionWord(session_id=state.id, word_id=payload.word_id))
             session.commit()
-        words = get_words_with_stats(session, state.id)
+        words = get_words_with_stats(session, state.id, enabled_only=True)
         return SessionState(language_set=state.language_set, words=words)
 
 
@@ -162,5 +171,34 @@ def add_words_bulk(payload: SessionWordBulkAdd) -> SessionState:
             if not existing:
                 session.add(UserSessionWord(session_id=state.id, word_id=word_id))
         session.commit()
-        words = get_words_with_stats(session, state.id)
+        words = get_words_with_stats(session, state.id, enabled_only=True)
+        return SessionState(language_set=state.language_set, words=words)
+
+
+@router.get("/words/all", response_model=SessionState)
+def get_all_words() -> SessionState:
+    """Get all words including disabled ones for management."""
+    with Session(engine) as session:
+        state = get_or_create_session(session)
+        words = get_words_with_stats(session, state.id, enabled_only=False)
+        return SessionState(language_set=state.language_set, words=words)
+
+
+@router.put("/words/toggle", response_model=SessionState)
+def toggle_word(payload: WordToggleRequest) -> SessionState:
+    """Enable or disable a word in the session."""
+    with Session(engine) as session:
+        state = get_or_create_session(session)
+        session_word = session.exec(
+            select(UserSessionWord).where(
+                UserSessionWord.session_id == state.id,
+                UserSessionWord.word_id == payload.word_id,
+            )
+        ).first()
+        if not session_word:
+            raise HTTPException(status_code=404, detail="Word not in session")
+        session_word.enabled = payload.enabled
+        session.add(session_word)
+        session.commit()
+        words = get_words_with_stats(session, state.id, enabled_only=False)
         return SessionState(language_set=state.language_set, words=words)
