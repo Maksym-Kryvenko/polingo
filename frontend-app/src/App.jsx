@@ -446,9 +446,11 @@ function App() {
       
       setEndingsStats(payload.stats);
       
-      // Auto-hide after 5 seconds and fetch next question
+      // Fetch next question immediately
+      fetchEndingsQuestion();
+      
+      // Auto-hide feedback after delay
       endingsStatusTimeoutRef.current = setTimeout(() => {
-        fetchEndingsQuestion();
         setEndingsStatus(null);
       }, STATUS_HIDE_DELAY);
     } catch (error) {
@@ -484,9 +486,11 @@ function App() {
       
       await fetchEndingsStats();
       
-      // Auto-hide after 5 seconds and fetch next question
+      // Fetch next question immediately
+      fetchEndingsQuestion();
+      
+      // Auto-hide feedback after delay
       endingsStatusTimeoutRef.current = setTimeout(() => {
-        fetchEndingsQuestion();
         setEndingsStatus(null);
       }, STATUS_HIDE_DELAY);
     } catch (error) {
@@ -1188,7 +1192,6 @@ function App() {
                       key={index}
                       className="endings-option"
                       onClick={() => handleEndingsAnswer(option)}
-                      disabled={endingsStatus !== null}
                     >
                       {option}
                     </button>
@@ -1198,7 +1201,6 @@ function App() {
                 <button 
                   className="skip-btn endings-skip"
                   onClick={handleEndingsSkip}
-                  disabled={endingsStatus !== null}
                 >
                   Skip (I don't know)
                 </button>
