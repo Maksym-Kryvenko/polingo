@@ -760,3 +760,20 @@ body {
 .toggle-switch input:focus + .toggle-slider {
   box-shadow: 0 0 3px var(--accent-strong);
 }
+
+.word-remove-btn {
+  background: none;
+  border: none;
+  color: #e74c3c;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.2s, color 0.2s;
+  flex-shrink: 0;
+}
+
+.word-remove-btn:hover {
+  background: rgba(231, 76, 60, 0.15);
+  color: #c0392b;
+}

@@ -293,6 +293,32 @@ function App() {
     }
   };
 
+  const handleDeleteWord = async (wordId) => {
+    if (!window.confirm("Permanently delete this word? This cannot be undone.")) return;
+    try {
+      const response = await fetch(buildUrl(`session/words/${wordId}`), { method: "DELETE" });
+      if (response.ok) {
+        setAllWords((prev) => prev.filter((w) => w.id !== wordId));
+        await fetchSession();
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleDeleteVerb = async (verbId) => {
+    if (!window.confirm("Permanently delete this verb? This cannot be undone.")) return;
+    try {
+      const response = await fetch(buildUrl(`verbs/session/${verbId}`), { method: "DELETE" });
+      if (response.ok) {
+        setAllVerbs((prev) => prev.filter((v) => v.id !== verbId));
+        await fetchVerbSession();
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   const handleLanguageChange = async (value) => {
     setLanguageSet(value);
     try {
@@ -1349,6 +1375,7 @@ function App() {
                           />
                           <span className="toggle-slider"></span>
                         </label>
+                        <button className="word-remove-btn" title="Delete word" onClick={() => handleDeleteWord(word.id)}>✕</button>
                       </li>
                     ))}
                   </ul>
@@ -1381,6 +1408,7 @@ function App() {
                           />
                           <span className="toggle-slider"></span>
                         </label>
+                        <button className="word-remove-btn" title="Delete verb" onClick={() => handleDeleteVerb(verb.id)}>✕</button>
                       </li>
                     ))}
                   </ul>

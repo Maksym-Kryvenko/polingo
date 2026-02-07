@@ -433,3 +433,36 @@ def toggle_verb(payload: VerbToggleRequest) -> VerbSessionState:
 
         # Return all verbs (including disabled) for management view
         return get_all_verbs()
+
+
+@router.delete("/session/{verb_id}")
+def delete_verb(verb_id: int):
+    """Permanently delete a verb from the database."""
+    with Session(engine) as session:
+        user_session = session.exec(select(UserSession)).first()
+        if user_session:
+            session_verb = session.exec(
+                select(UserSessionVerb).where(
+                    UserSessionVerb.session_id == user_session.id,
+                    UserSessionVerb.verb_id == verb_id,
+                )
+            ).first()
+            if session_verb:
+                session.delete(session_verb)
+        # Remove practice records
+        for record in session.exec(
+            select(VerbPracticeRecord).where(VerbPracticeRecord.verb_id == verb_id)
+        ).all():
+            session.delete(record)
+        # Remove conjugations
+        for conj in session.exec(
+            select(VerbConjugation).where(VerbConjugation.verb_id == verb_id)
+        ).all():
+            session.delete(conj)
+        # Remove the verb itself
+        verb = session.get(Verb, verb_id)
+        if not verb:
+            raise HTTPException(status_code=404, detail="Verb not found")
+        session.delete(verb)
+        session.commit()
+        return {"ok": True}

@@ -5,7 +5,7 @@ from sqlalchemy import func, case, desc
 from sqlmodel import Session, select
 
 from app.database import engine
-from app.models import UserSession, UserSessionWord, Word, PracticeRecord
+from app.models import UserSession, UserSessionWord, Word, PracticeRecord, WordOption
 from app.schemas import (
     SessionLanguageUpdate,
     SessionState,
@@ -202,3 +202,36 @@ def toggle_word(payload: WordToggleRequest) -> SessionState:
         session.commit()
         words = get_words_with_stats(session, state.id, enabled_only=False)
         return SessionState(language_set=state.language_set, words=words)
+
+
+@router.delete("/words/{word_id}")
+def delete_word(word_id: int):
+    """Permanently delete a word from the database."""
+    with Session(engine) as session:
+        user_session = session.exec(select(UserSession)).first()
+        if user_session:
+            session_word = session.exec(
+                select(UserSessionWord).where(
+                    UserSessionWord.session_id == user_session.id,
+                    UserSessionWord.word_id == word_id,
+                )
+            ).first()
+            if session_word:
+                session.delete(session_word)
+        # Remove practice records
+        for record in session.exec(
+            select(PracticeRecord).where(PracticeRecord.word_id == word_id)
+        ).all():
+            session.delete(record)
+        # Remove word options
+        for option in session.exec(
+            select(WordOption).where(WordOption.word_id == word_id)
+        ).all():
+            session.delete(option)
+        # Remove the word itself
+        word = session.get(Word, word_id)
+        if not word:
+            raise HTTPException(status_code=404, detail="Word not found")
+        session.delete(word)
+        session.commit()
+        return {"ok": True}
