@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
+// Dynamically determine API URL based on current browser hostname
+// This allows the app to work on any device without configuration
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? `http://${window.location.hostname}:8000/api`;
 
 // Fisher-Yates shuffle algorithm
 function shuffleArray(array) {

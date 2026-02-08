@@ -7,7 +7,7 @@ RUN npm install
 
 COPY frontend-app .
 
-ENV VITE_API_BASE_URL="http://localhost:8000/api"
+# Don't set VITE_API_BASE_URL - let frontend determine it dynamically from window.location.hostname
 ENV BROWSER=none
 
 EXPOSE 5173
