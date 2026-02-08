@@ -89,6 +89,12 @@ function App() {
   const [verbStatus, setVerbStatus] = useState(null);
   const [verbLoading, setVerbLoading] = useState(false);
 
+  // Choose Translation state
+  const [chooseTranslationQuestion, setChooseTranslationQuestion] = useState(null);
+  const [chooseTranslationStatus, setChooseTranslationStatus] = useState(null);
+  const [chooseTranslationDirection, setChooseTranslationDirection] = useState("from_polish"); // "from_polish" or "to_polish"
+  const chooseTranslationStatusTimeoutRef = useRef(null);
+
   // Manage words state
   const [allWords, setAllWords] = useState([]);
   const [allVerbs, setAllVerbs] = useState([]);
@@ -124,6 +130,8 @@ function App() {
     setEndingsStatus(null);
     setEndingsQuestion(null);
     setLastAnswer(null);
+    setChooseTranslationStatus(null);
+    setChooseTranslationQuestion(null);
     
     // Shuffle words when entering any practice mode
     if (activePage === "translation" || activePage === "writing" || activePage === "pronunciation") {
@@ -133,6 +141,11 @@ function App() {
     // Fetch first endings question when entering endings mode
     if (activePage === "endings") {
       fetchEndingsQuestion();
+    }
+    
+    // Fetch first question when entering choose translation mode
+    if (activePage === "choose-translation") {
+      fetchChooseTranslationQuestion();
     }
   }, [activePage, languageSet, wordPool]);
 
@@ -230,6 +243,22 @@ function App() {
     } catch (error) {
       console.error(error);
       setEndingsStatus({ type: "error", message: "Add verbs to your session first." });
+    }
+  }
+
+  async function fetchChooseTranslationQuestion() {
+    try {
+      const response = await fetch(
+        buildUrl(`practice/choose-translation/question?language_set=${languageSet}&direction=${chooseTranslationDirection}`)
+      );
+      if (!response.ok) {
+        throw new Error("Could not get question");
+      }
+      const payload = await response.json();
+      setChooseTranslationQuestion(payload);
+    } catch (error) {
+      console.error(error);
+      setChooseTranslationStatus({ type: "error", message: "Add at least 4 words to your session first." });
     }
   }
 
@@ -596,6 +625,107 @@ function App() {
       console.error(error);
     }
   };
+
+  const handleChooseTranslationAnswer = async (selectedAnswer) => {
+    if (!chooseTranslationQuestion) return;
+
+    // Clear any existing timeout
+    if (chooseTranslationStatusTimeoutRef.current) {
+      clearTimeout(chooseTranslationStatusTimeoutRef.current);
+    }
+
+    try {
+      const response = await fetch(buildUrl("practice/choose-translation/validate"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          word_id: chooseTranslationQuestion.word_id,
+          language_set: languageSet,
+          direction: chooseTranslationDirection,
+          answer: selectedAnswer,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Validation failed");
+      }
+
+      const payload = await response.json();
+      
+      if (payload.was_correct) {
+        setChooseTranslationStatus({ type: "success", message: "Correct! Well done." });
+      } else {
+        setChooseTranslationStatus({
+          type: "error",
+          message: `Incorrect. The answer was "${payload.correct_answer}".`,
+        });
+      }
+      
+      setStats(payload.stats);
+      
+      // Fetch next question immediately
+      fetchChooseTranslationQuestion();
+      
+      // Auto-hide feedback after delay
+      chooseTranslationStatusTimeoutRef.current = setTimeout(() => {
+        setChooseTranslationStatus(null);
+      }, STATUS_HIDE_DELAY);
+    } catch (error) {
+      console.error(error);
+      setChooseTranslationStatus({ type: "error", message: "Could not validate answer." });
+    }
+  };
+
+  const handleChooseTranslationSkip = async () => {
+    if (!chooseTranslationQuestion) return;
+
+    // Clear any existing timeout
+    if (chooseTranslationStatusTimeoutRef.current) {
+      clearTimeout(chooseTranslationStatusTimeoutRef.current);
+    }
+
+    try {
+      // Record as incorrect
+      await fetch(buildUrl("practice/choose-translation/validate"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          word_id: chooseTranslationQuestion.word_id,
+          language_set: languageSet,
+          direction: chooseTranslationDirection,
+          answer: "", // Empty = wrong
+        }),
+      });
+      
+      setChooseTranslationStatus({
+        type: "info",
+        message: `Skipped. The answer was "${chooseTranslationQuestion.correct_answer}".`,
+      });
+      
+      // Fetch next question immediately
+      fetchChooseTranslationQuestion();
+      
+      // Auto-hide feedback after delay
+      chooseTranslationStatusTimeoutRef.current = setTimeout(() => {
+        setChooseTranslationStatus(null);
+      }, STATUS_HIDE_DELAY);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleChooseTranslationDirectionChange = (newDirection) => {
+    setChooseTranslationDirection(newDirection);
+    setChooseTranslationQuestion(null);
+    setChooseTranslationStatus(null);
+  };
+
+  // Refetch question when direction changes
+  useEffect(() => {
+    if (activePage === "choose-translation") {
+      fetchChooseTranslationQuestion();
+    }
+  }, [chooseTranslationDirection]);
 
   const handlePracticeSubmit = async (event) => {
     event?.preventDefault?.();
@@ -1018,6 +1148,12 @@ function App() {
                 <h3>Speak Polish words</h3>
                 <p>Practice saying words and get AI feedback.</p>
               </button>
+              <button className="nav-card" onClick={() => setActivePage("choose-translation")}
+                type="button">
+                <p className="subtitle">Choose Translation</p>
+                <h3>Pick the correct answer</h3>
+                <p>Choose from 4 options in {languageSet === "english" ? "English" : "Ukrainian"} or Polish.</p>
+              </button>
               <button className="nav-card" onClick={() => setActivePage("endings")}
                 type="button">
                 <p className="subtitle">Endings</p>
@@ -1313,6 +1449,88 @@ function App() {
             )}
 
             {!endingsQuestion && verbPool.length > 0 && (
+              <div className="practice-card">
+                <p>Loading question...</p>
+              </div>
+            )}
+          </section>
+        )}
+
+        {activePage === "choose-translation" && (
+          <section className="panel practice-panel">
+            <div className="panel-header">
+              <div>
+                <p className="subtitle">Practice</p>
+                <h2>Choose Translation</h2>
+              </div>
+              <button className="secondary" onClick={() => setActivePage("home")}>
+                Back to main
+              </button>
+            </div>
+
+            {wordPool.length < 4 && (
+              <p className="status info">
+                Add at least 4 words to your session first. Go to "Add words" to add more.
+              </p>
+            )}
+
+            {/* Direction selector */}
+            <div className="direction-tabs">
+              <button 
+                className={`direction-tab ${chooseTranslationDirection === "from_polish" ? "active" : ""}`}
+                onClick={() => handleChooseTranslationDirectionChange("from_polish")}
+                type="button"
+              >
+                Polish → {languageSet === "english" ? "English" : "Ukrainian"}
+              </button>
+              <button 
+                className={`direction-tab ${chooseTranslationDirection === "to_polish" ? "active" : ""}`}
+                onClick={() => handleChooseTranslationDirectionChange("to_polish")}
+                type="button"
+              >
+                {languageSet === "english" ? "English" : "Ukrainian"} → Polish
+              </button>
+            </div>
+
+            <div className="practice-status">
+              <p className={`status ${chooseTranslationStatus?.type ?? "info"}`}>
+                {chooseTranslationStatus?.message ?? "Select the correct translation from the options below."}
+              </p>
+            </div>
+
+            {chooseTranslationQuestion && (
+              <div className="practice-card choose-translation-card">
+                <div className="practice-mirror">
+                  <p className="subtitle">
+                    Translate {chooseTranslationDirection === "from_polish" ? "from Polish" : `to Polish`}:
+                  </p>
+                  <p className="prompt choose-translation-prompt">
+                    {chooseTranslationQuestion.prompt}
+                  </p>
+                </div>
+                
+                <div className="choose-translation-options">
+                  {chooseTranslationQuestion.options.map((option, index) => (
+                    <button
+                      key={index}
+                      className="choose-translation-option"
+                      onClick={() => handleChooseTranslationAnswer(option)}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+
+                <button 
+                  className="skip-btn choose-translation-skip"
+                  onClick={handleChooseTranslationSkip}
+                >
+                  Skip (I don't know)
+                </button>
+              </div>
+            )}
+
+            {!chooseTranslationQuestion && wordPool.length >= 4 && (
               <div className="practice-card">
                 <p>Loading question...</p>
               </div>

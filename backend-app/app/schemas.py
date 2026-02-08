@@ -204,3 +204,28 @@ class WordToggleRequest(SQLModel):
 class VerbToggleRequest(SQLModel):
     verb_id: int
     enabled: bool
+
+
+# Choose Translation schemas
+class TranslationQuestion(SQLModel):
+    word_id: int
+    polish: str
+    english: str
+    ukrainian: str
+    prompt: str  # The word to translate (source)
+    correct_answer: str  # The correct translation (target)
+    options: list[str]  # 4 shuffled options including correct
+    direction: str  # "from_polish" or "to_polish"
+
+
+class TranslationValidationRequest(SQLModel):
+    word_id: int
+    language_set: LanguageSet
+    direction: str  # "from_polish" or "to_polish"
+    answer: str
+
+
+class TranslationValidationResponse(SQLModel):
+    was_correct: bool
+    correct_answer: str
+    stats: "StatsResponse"
