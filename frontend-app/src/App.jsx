@@ -53,8 +53,15 @@ const buildUrl = (path) => `${API_BASE_URL}/${path}`;
 // Auto-hide delay in milliseconds
 const STATUS_HIDE_DELAY = 5000;
 
+// Get initial page from URL hash (for hidden admin access)
+function getInitialPage() {
+  const hash = window.location.hash.replace('#', '');
+  if (hash === 'admin') return 'admin';
+  return 'home';
+}
+
 function App() {
-  const [activePage, setActivePage] = useState("home");
+  const [activePage, setActivePage] = useState(getInitialPage);
   const [languageSet, setLanguageSet] = useState("english");
   const [manualEntry, setManualEntry] = useState("");
   const [manualStatus, setManualStatus] = useState(null);
@@ -102,6 +109,11 @@ function App() {
   const [allVerbs, setAllVerbs] = useState([]);
   const [manageMode, setManageMode] = useState("words"); // "words" or "verbs"
 
+  // Admin state
+  const [connectedDevices, setConnectedDevices] = useState([]);
+  const [deviceStats, setDeviceStats] = useState({ total: 0, active: 0 });
+  const adminPollIntervalRef = useRef(null);
+
   useEffect(() => {
     fetchStats();
     fetchSession();
@@ -115,6 +127,20 @@ function App() {
       fetchAllWords();
       fetchAllVerbs();
     }
+    
+    // Start polling for admin page
+    if (activePage === "admin") {
+      fetchConnectedDevices();
+      adminPollIntervalRef.current = setInterval(fetchConnectedDevices, 5000);
+    }
+    
+    // Cleanup polling when leaving admin page
+    return () => {
+      if (adminPollIntervalRef.current) {
+        clearInterval(adminPollIntervalRef.current);
+        adminPollIntervalRef.current = null;
+      }
+    };
   }, [activePage]);
 
   useEffect(() => {
@@ -287,6 +313,38 @@ function App() {
       console.error(error);
     }
   }
+
+  async function fetchConnectedDevices() {
+    try {
+      const response = await fetch(buildUrl("admin/devices"));
+      if (response.ok) {
+        const payload = await response.json();
+        setConnectedDevices(payload.devices ?? []);
+        setDeviceStats({ total: payload.total_count, active: payload.active_count });
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  const handleDeleteDevice = async (deviceId) => {
+    try {
+      await fetch(buildUrl(`admin/devices/${deviceId}`), { method: "DELETE" });
+      fetchConnectedDevices();
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleClearAllDevices = async () => {
+    if (!window.confirm("Clear all device tracking data?")) return;
+    try {
+      await fetch(buildUrl("admin/devices"), { method: "DELETE" });
+      fetchConnectedDevices();
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   const handleToggleWord = async (wordId, enabled) => {
     try {
@@ -1635,6 +1693,73 @@ function App() {
                 )}
               </div>
             )}
+          </section>
+        )}
+
+        {activePage === "admin" && (
+          <section className="panel admin-panel">
+            <div className="panel-header">
+              <div>
+                <p className="subtitle">Admin</p>
+                <h2>Connected Devices</h2>
+              </div>
+              <button className="secondary" onClick={() => setActivePage("home")}>
+                Back to main
+              </button>
+            </div>
+
+            <div className="admin-stats">
+              <div className="admin-stat">
+                <span className="stat-value">{deviceStats.total}</span>
+                <span className="stat-label">Total devices</span>
+              </div>
+              <div className="admin-stat active">
+                <span className="stat-value">{deviceStats.active}</span>
+                <span className="stat-label">Active now</span>
+              </div>
+              <button className="secondary clear-btn" onClick={handleClearAllDevices}>
+                Clear all
+              </button>
+            </div>
+
+            <p className="admin-info">Updates every 5 seconds • Active = activity in last 5 minutes</p>
+
+            <div className="devices-list">
+              {connectedDevices.length === 0 ? (
+                <p className="status info">No devices have connected yet.</p>
+              ) : (
+                <ul className="device-list">
+                  {connectedDevices.map((device) => (
+                    <li key={device.id} className={`device-item ${device.is_active ? "active" : "inactive"}`}>
+                      <div className="device-status">
+                        <span className={`status-dot ${device.is_active ? "online" : "offline"}`}></span>
+                      </div>
+                      <div className="device-info">
+                        <div className="device-primary">
+                          <span className="device-type">{device.device_type}</span>
+                          <span className="device-browser">{device.browser} on {device.os}</span>
+                        </div>
+                        <div className="device-secondary">
+                          <span className="device-ip">{device.ip_address}</span>
+                          <span className="device-requests">{device.request_count} requests</span>
+                        </div>
+                        <div className="device-times">
+                          <span>First seen: {new Date(device.first_seen).toLocaleString()}</span>
+                          <span>Last active: {new Date(device.last_activity).toLocaleString()}</span>
+                        </div>
+                      </div>
+                      <button 
+                        className="device-remove-btn" 
+                        title="Remove device"
+                        onClick={() => handleDeleteDevice(device.id)}
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </section>
         )}
       </main>

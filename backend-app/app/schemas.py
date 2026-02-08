@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
 from pydantic import ConfigDict
@@ -229,3 +230,23 @@ class TranslationValidationResponse(SQLModel):
     was_correct: bool
     correct_answer: str
     stats: "StatsResponse"
+
+
+# Admin/Device tracking schemas
+class DeviceRead(SQLModel):
+    id: int
+    ip_address: str
+    user_agent: str
+    device_type: str
+    browser: str
+    os: str
+    first_seen: "datetime"
+    last_activity: "datetime"
+    request_count: int
+    is_active: bool
+
+
+class DevicesResponse(SQLModel):
+    devices: list[DeviceRead]
+    total_count: int
+    active_count: int

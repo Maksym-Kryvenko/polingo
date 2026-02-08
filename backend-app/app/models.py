@@ -107,3 +107,15 @@ class UserSessionVerb(SQLModel, table=True):
     verb_id: int = Field(foreign_key="verb.id")
     added_at: datetime = Field(default_factory=datetime.utcnow)
     enabled: bool = Field(default=True)
+
+
+class ConnectedDevice(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ip_address: str = Field(index=True)
+    user_agent: str
+    device_type: str  # "mobile", "desktop", "tablet", "unknown"
+    browser: str
+    os: str
+    first_seen: datetime = Field(default_factory=datetime.utcnow)
+    last_activity: datetime = Field(default_factory=datetime.utcnow)
+    request_count: int = Field(default=1)

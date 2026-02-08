@@ -856,3 +856,171 @@ body {
   width: 100%;
   margin-top: 0.5rem;
 }
+
+/* Admin page styles */
+.admin-card {
+  border-color: rgba(255, 179, 71, 0.3) !important;
+}
+
+.admin-card:hover {
+  border-color: var(--accent) !important;
+}
+
+.admin-stats {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 16px;
+  border: 1px solid var(--panel-border);
+}
+
+.admin-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.5rem 1.5rem;
+}
+
+.admin-stat .stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.admin-stat .stat-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1rem;
+}
+
+.admin-stat.active .stat-value {
+  color: var(--accent-strong);
+}
+
+.admin-stats .clear-btn {
+  margin-left: auto;
+}
+
+.admin-info {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 1rem;
+}
+
+.device-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.device-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  transition: all 0.2s ease;
+}
+
+.device-item.active {
+  border-color: rgba(14, 228, 223, 0.3);
+  background: rgba(14, 228, 223, 0.05);
+}
+
+.device-item.inactive {
+  opacity: 0.7;
+}
+
+.device-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+.status-dot.online {
+  background: var(--accent-strong);
+  box-shadow: 0 0 8px var(--accent-strong);
+}
+
+.status-dot.offline {
+  background: rgba(255, 255, 255, 0.3);
+  animation: none;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.device-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.device-primary {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.device-type {
+  font-weight: 600;
+  text-transform: capitalize;
+  color: var(--accent);
+}
+
+.device-browser {
+  color: var(--text);
+}
+
+.device-secondary {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.device-ip {
+  font-family: monospace;
+}
+
+.device-times {
+  display: flex;
+  gap: 1.5rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.device-remove-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.device-remove-btn:hover {
+  background: rgba(231, 76, 60, 0.15);
+  color: #e74c3c;
+}

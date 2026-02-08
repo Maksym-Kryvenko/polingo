@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.admin import router as admin_router
 from app.api.practice import router as practice_router
 from app.api.session import router as session_router
 from app.api.stats import router as stats_router
@@ -12,3 +13,4 @@ router.include_router(practice_router)
 router.include_router(stats_router)
 router.include_router(session_router)
 router.include_router(verbs_router)
+router.include_router(admin_router)
