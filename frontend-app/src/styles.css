@@ -778,6 +778,123 @@ body {
   color: #c0392b;
 }
 
+.word-edit-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.2s, color 0.2s;
+  flex-shrink: 0;
+}
+
+.word-edit-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--accent);
+}
+
+.word-manage-item.editing {
+  flex-direction: column;
+  align-items: stretch;
+  opacity: 1;
+}
+
+.word-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.word-edit-fields {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.word-edit-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08rem;
+  flex: 1;
+  min-width: 120px;
+}
+
+.word-edit-input {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.95rem;
+  padding: 0.45rem 0.7rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.word-edit-input:focus {
+  border-color: var(--accent-strong);
+}
+
+.word-edit-input:disabled {
+  opacity: 0.5;
+}
+
+.word-edit-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.word-edit-save-btn {
+  background: var(--accent-strong);
+  border: none;
+  border-radius: 8px;
+  color: #030712;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.45rem 1.1rem;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.word-edit-save-btn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.word-edit-save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.word-edit-cancel-btn {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.9rem;
+  padding: 0.45rem 1.1rem;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.word-edit-cancel-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
+
+.word-edit-cancel-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Choose Translation styles */
 .direction-tabs {
   display: flex;

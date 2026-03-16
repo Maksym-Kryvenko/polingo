@@ -11,6 +11,7 @@ from app.schemas import (
     WordCheckBulkResponse,
     WordCheckResult,
     WordRead,
+    WordUpdateRequest,
 )
 from app.llm import resolve_word_via_llm
 
@@ -21,6 +22,27 @@ router = APIRouter(prefix="/words", tags=["words"])
 def get_initial_words(count: int = 10) -> list[WordRead]:
     with Session(engine) as session:
         return session.exec(select(Word).limit(count)).all()
+
+
+@router.put("/{word_id}", response_model=WordRead)
+def update_word(word_id: int, payload: WordUpdateRequest) -> WordRead:
+    polish = payload.polish.strip()
+    english = payload.english.strip()
+    ukrainian = payload.ukrainian.strip()
+    if not polish or not english or not ukrainian:
+        raise HTTPException(status_code=400, detail="All translation fields are required")
+
+    with Session(engine) as session:
+        word = session.get(Word, word_id)
+        if not word:
+            raise HTTPException(status_code=404, detail="Word not found")
+        word.polish = polish
+        word.english = english
+        word.ukrainian = ukrainian
+        session.add(word)
+        session.commit()
+        session.refresh(word)
+        return WordRead.model_validate(word)
 
 
 @router.post("/check", response_model=WordCheckResponse)

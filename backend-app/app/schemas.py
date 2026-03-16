@@ -31,6 +31,12 @@ class WordWithStats(SQLModel):
     enabled: bool = True
 
 
+class WordUpdateRequest(SQLModel):
+    polish: str
+    english: str
+    ukrainian: str
+
+
 class WordCheckRequest(SQLModel):
     text: str
 

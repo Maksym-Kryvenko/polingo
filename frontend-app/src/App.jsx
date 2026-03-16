@@ -108,6 +108,9 @@ function App() {
   const [allWords, setAllWords] = useState([]);
   const [allVerbs, setAllVerbs] = useState([]);
   const [manageMode, setManageMode] = useState("words"); // "words" or "verbs"
+  const [editingWordId, setEditingWordId] = useState(null);
+  const [editingValues, setEditingValues] = useState({ polish: "", english: "", ukrainian: "" });
+  const [editSaving, setEditSaving] = useState(false);
 
   // Admin state
   const [connectedDevices, setConnectedDevices] = useState([]);
@@ -392,6 +395,38 @@ function App() {
       }
     } catch (error) {
       console.error(error);
+    }
+  };
+
+  const handleStartEditWord = (word) => {
+    setEditingWordId(word.id);
+    setEditingValues({ polish: word.polish, english: word.english, ukrainian: word.ukrainian });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingWordId(null);
+    setEditingValues({ polish: "", english: "", ukrainian: "" });
+  };
+
+  const handleSaveEdit = async (wordId) => {
+    setEditSaving(true);
+    try {
+      const response = await fetch(buildUrl(`words/${wordId}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editingValues),
+      });
+      if (response.ok) {
+        const updated = await response.json();
+        setAllWords((prev) => prev.map((w) => w.id === wordId ? { ...w, ...updated } : w));
+        setEditingWordId(null);
+        setEditingValues({ polish: "", english: "", ukrainian: "" });
+        await fetchSession();
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -1635,25 +1670,70 @@ function App() {
                 ) : (
                   <ul className="word-manage-list">
                     {allWords.map((word) => (
-                      <li key={word.id} className={`word-manage-item ${!word.enabled ? "disabled" : ""}`}>
-                        <div className="word-info">
-                          <span className="word-polish">{word.polish}</span>
-                          <span className="word-translation">{word[languageSet]}</span>
-                        </div>
-                        <div className="word-stats">
-                          {word.total_attempts > 0 
-                            ? `${word.error_rate}% errors (${word.total_attempts} tries)`
-                            : "New"}
-                        </div>
-                        <label className="toggle-switch">
-                          <input
-                            type="checkbox"
-                            checked={word.enabled}
-                            onChange={(e) => handleToggleWord(word.id, e.target.checked)}
-                          />
-                          <span className="toggle-slider"></span>
-                        </label>
-                        <button className="word-remove-btn" title="Delete word" onClick={() => handleDeleteWord(word.id)}>✕</button>
+                      <li key={word.id} className={`word-manage-item ${!word.enabled ? "disabled" : ""} ${editingWordId === word.id ? "editing" : ""}`}>
+                        {editingWordId === word.id ? (
+                          <div className="word-edit-form">
+                            <div className="word-edit-fields">
+                              <label className="word-edit-label">
+                                Polish
+                                <input
+                                  className="word-edit-input"
+                                  value={editingValues.polish}
+                                  onChange={(e) => setEditingValues((v) => ({ ...v, polish: e.target.value }))}
+                                  disabled={editSaving}
+                                />
+                              </label>
+                              <label className="word-edit-label">
+                                English
+                                <input
+                                  className="word-edit-input"
+                                  value={editingValues.english}
+                                  onChange={(e) => setEditingValues((v) => ({ ...v, english: e.target.value }))}
+                                  disabled={editSaving}
+                                />
+                              </label>
+                              <label className="word-edit-label">
+                                Ukrainian
+                                <input
+                                  className="word-edit-input"
+                                  value={editingValues.ukrainian}
+                                  onChange={(e) => setEditingValues((v) => ({ ...v, ukrainian: e.target.value }))}
+                                  disabled={editSaving}
+                                />
+                              </label>
+                            </div>
+                            <div className="word-edit-actions">
+                              <button className="word-edit-save-btn" onClick={() => handleSaveEdit(word.id)} disabled={editSaving}>
+                                {editSaving ? "Saving…" : "Save"}
+                              </button>
+                              <button className="word-edit-cancel-btn" onClick={handleCancelEdit} disabled={editSaving}>
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="word-info">
+                              <span className="word-polish">{word.polish}</span>
+                              <span className="word-translation">{word[languageSet]}</span>
+                            </div>
+                            <div className="word-stats">
+                              {word.total_attempts > 0 
+                                ? `${word.error_rate}% errors (${word.total_attempts} tries)`
+                                : "New"}
+                            </div>
+                            <button className="word-edit-btn" title="Edit translations" onClick={() => handleStartEditWord(word)}>✎</button>
+                            <label className="toggle-switch">
+                              <input
+                                type="checkbox"
+                                checked={word.enabled}
+                                onChange={(e) => handleToggleWord(word.id, e.target.checked)}
+                              />
+                              <span className="toggle-slider"></span>
+                            </label>
+                            <button className="word-remove-btn" title="Delete word" onClick={() => handleDeleteWord(word.id)}>✕</button>
+                          </>
+                        )}
                       </li>
                     ))}
                   </ul>
