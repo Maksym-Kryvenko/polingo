@@ -5,7 +5,17 @@ from sqlalchemy import func, case, desc
 from sqlmodel import Session, select
 
 from app.database import engine
-from app.models import UserSession, UserSessionWord, Word, PracticeRecord, WordOption
+from app.models import (
+    UserSession,
+    UserSessionWord,
+    Word,
+    PracticeRecord,
+    WordOption,
+    WordDeclension,
+    VerbConjugation,
+    PracticeSentence,
+    EndingsPracticeRecord,
+)
 from app.schemas import (
     SessionLanguageUpdate,
     SessionState,
@@ -52,6 +62,8 @@ def get_words_with_stats(
             Word.polish,
             Word.english,
             Word.ukrainian,
+            Word.part_of_speech,
+            Word.gender,
             func.coalesce(stats_subquery.c.total_attempts, 0).label("total_attempts"),
             func.coalesce(stats_subquery.c.correct_attempts, 0).label(
                 "correct_attempts"
@@ -103,6 +115,8 @@ def get_words_with_stats(
                 polish=row.polish,
                 english=row.english,
                 ukrainian=row.ukrainian,
+                part_of_speech=row.part_of_speech.value if hasattr(row.part_of_speech, 'value') else str(row.part_of_speech),
+                gender=row.gender,
                 total_attempts=total,
                 correct_attempts=correct,
                 error_rate=round(error_rate, 1),
@@ -223,11 +237,31 @@ def delete_word(word_id: int):
             select(PracticeRecord).where(PracticeRecord.word_id == word_id)
         ).all():
             session.delete(record)
+        # Remove endings practice records
+        for record in session.exec(
+            select(EndingsPracticeRecord).where(EndingsPracticeRecord.word_id == word_id)
+        ).all():
+            session.delete(record)
         # Remove word options
         for option in session.exec(
             select(WordOption).where(WordOption.word_id == word_id)
         ).all():
             session.delete(option)
+        # Remove declensions
+        for d in session.exec(
+            select(WordDeclension).where(WordDeclension.word_id == word_id)
+        ).all():
+            session.delete(d)
+        # Remove conjugations
+        for c in session.exec(
+            select(VerbConjugation).where(VerbConjugation.word_id == word_id)
+        ).all():
+            session.delete(c)
+        # Remove practice sentences
+        for s in session.exec(
+            select(PracticeSentence).where(PracticeSentence.word_id == word_id)
+        ).all():
+            session.delete(s)
         # Remove the word itself
         word = session.get(Word, word_id)
         if not word:

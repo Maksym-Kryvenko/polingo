@@ -1,11 +1,11 @@
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from sqlmodel import Session, select
 
 from app.database import engine
-from app.models import ConnectedDevice
-from app.schemas import DeviceRead, DevicesResponse
+from app.models import ConnectedDevice, AppSetting
+from app.schemas import DeviceRead, DevicesResponse, AppSettingRead, AppSettingUpdate
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -75,3 +75,34 @@ def clear_all_devices() -> dict:
             session.delete(device)
         session.commit()
         return {"success": True, "message": f"Removed {len(devices)} devices"}
+
+
+@router.get("/settings", response_model=list[AppSettingRead])
+def get_settings() -> list[AppSettingRead]:
+    with Session(engine) as session:
+        settings = session.exec(select(AppSetting)).all()
+        return [AppSettingRead(key=s.key, value=s.value) for s in settings]
+
+
+@router.get("/settings/{key}", response_model=AppSettingRead)
+def get_setting(key: str) -> AppSettingRead:
+    with Session(engine) as session:
+        setting = session.get(AppSetting, key)
+        if not setting:
+            raise HTTPException(status_code=404, detail="Setting not found")
+        return AppSettingRead(key=setting.key, value=setting.value)
+
+
+@router.put("/settings/{key}", response_model=AppSettingRead)
+def update_setting(key: str, payload: AppSettingUpdate) -> AppSettingRead:
+    with Session(engine) as session:
+        setting = session.get(AppSetting, key)
+        if not setting:
+            setting = AppSetting(key=key, value=payload.value)
+            session.add(setting)
+        else:
+            setting.value = payload.value
+            session.add(setting)
+        session.commit()
+        session.refresh(setting)
+        return AppSettingRead(key=setting.key, value=setting.value)

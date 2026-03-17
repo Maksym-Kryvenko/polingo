@@ -19,24 +19,31 @@ def get_openai_client() -> OpenAI:
     return OpenAI(api_key=api_key)
 
 
-def resolve_word_via_llm(text: str) -> Dict[str, str]:
+MODEL = "gpt-5-mini"
+
+
+# ── Word resolution ──────────────────────────────────────────
+
+
+def resolve_word_via_llm(text: str) -> Dict[str, Any]:
+    """Resolve a word/phrase: detect language, translate, determine part of speech."""
     client = get_openai_client()
     prompt = (
         "You are a careful linguist. Given a single word or short phrase in Polish, English, or Ukrainian, "
-        "correct spelling if needed and provide translations in the other two languages. "
-        "Return JSON only with keys: detected_language, corrected_input, polish, english, ukrainian. "
-        "Use lowercase for the translations unless proper noun."
+        "correct spelling if needed, provide translations in all three languages, and classify the "
+        "part of speech of the POLISH form. "
+        "Return JSON only with keys: detected_language, corrected_input, polish, english, ukrainian, "
+        "part_of_speech (one of: rzeczownik, czasownik, przymiotnik, zaimek, przysłówek, inne), "
+        "gender (for rzeczownik only: męski, żeński, or nijaki; null otherwise). "
+        "Use lowercase for translations unless proper noun."
     )
-    response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": text},
-        ],
-        temperature=0.2,
-        response_format={"type": "json_object"},
+    response = client.responses.create(
+        model=MODEL,
+        instructions=prompt,
+        input=text,
+        text={"format": {"type": "json_object"}},
     )
-    content = response.choices[0].message.content or "{}"
+    content = response.output_text or "{}"
     payload: Dict[str, Any] = json.loads(content)
     return {
         "detected_language": str(payload.get("detected_language", "")),
@@ -44,7 +51,12 @@ def resolve_word_via_llm(text: str) -> Dict[str, str]:
         "polish": str(payload.get("polish", "")),
         "english": str(payload.get("english", "")),
         "ukrainian": str(payload.get("ukrainian", "")),
+        "part_of_speech": str(payload.get("part_of_speech", "inne")),
+        "gender": payload.get("gender"),
     }
+
+
+# ── Translation validation ───────────────────────────────────
 
 
 def validate_translation_via_llm(
@@ -67,16 +79,13 @@ def validate_translation_via_llm(
         f"Direction: {direction.value}\n"
         f"Learner answer ({target_language.value}): {answer}"
     )
-    response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": user_message},
-        ],
-        temperature=0.0,
-        response_format={"type": "json_object"},
+    response = client.responses.create(
+        model=MODEL,
+        instructions=prompt,
+        input=user_message,
+        text={"format": {"type": "json_object"}},
     )
-    content = response.choices[0].message.content or "{}"
+    content = response.output_text or "{}"
     payload: Dict[str, Any] = json.loads(content)
     return {
         "is_correct": bool(payload.get("is_correct")),
@@ -85,13 +94,13 @@ def validate_translation_via_llm(
     }
 
 
-def transcribe_audio(audio_data: bytes, filename: str = "audio.webm") -> str:
-    """Transcribe audio using OpenAI Whisper API."""
-    client = get_openai_client()
+# ── Pronunciation ────────────────────────────────────────────
 
+
+def transcribe_audio(audio_data: bytes, filename: str = "audio.webm") -> str:
+    client = get_openai_client()
     audio_file = io.BytesIO(audio_data)
     audio_file.name = filename
-
     response = client.audio.transcriptions.create(
         model="whisper-1",
         file=audio_file,
@@ -101,39 +110,26 @@ def transcribe_audio(audio_data: bytes, filename: str = "audio.webm") -> str:
 
 
 def evaluate_pronunciation_via_llm(
-    *,
-    expected_word: str,
-    transcribed_text: str,
+    *, expected_word: str, transcribed_text: str
 ) -> Dict[str, Any]:
-    """Evaluate if the transcribed pronunciation matches the expected word."""
     client = get_openai_client()
-
     prompt = (
         "You are a Polish language pronunciation evaluator. Compare the expected Polish word "
-        "with what was transcribed from the learner's speech. Consider that speech-to-text "
-        "may have minor variations. Be lenient with capitalization and punctuation. "
-        "Return JSON only with keys: is_correct (boolean), feedback (string with helpful pronunciation tips if incorrect), "
-        "similarity_score (float 0-1 indicating how close the pronunciation was)."
+        "with what was transcribed from the learner's speech. Be lenient with capitalization and punctuation. "
+        "Return JSON only with keys: is_correct (boolean), feedback (string), similarity_score (float 0-1)."
     )
-
     user_message = (
         f"Expected Polish word: {expected_word}\n"
         f"Transcribed speech: {transcribed_text}"
     )
-
-    response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": user_message},
-        ],
-        temperature=0.0,
-        response_format={"type": "json_object"},
+    response = client.responses.create(
+        model=MODEL,
+        instructions=prompt,
+        input=user_message,
+        text={"format": {"type": "json_object"}},
     )
-
-    content = response.choices[0].message.content or "{}"
+    content = response.output_text or "{}"
     payload: Dict[str, Any] = json.loads(content)
-
     return {
         "is_correct": bool(payload.get("is_correct")),
         "feedback": str(payload.get("feedback", "")),
@@ -141,42 +137,180 @@ def evaluate_pronunciation_via_llm(
     }
 
 
+# ── Verb conjugation generation ──────────────────────────────
+
+
 def generate_verb_conjugations_via_llm(
-    verb: str, source_language: str
+    polish_infinitive: str, tenses: list[str] | None = None
 ) -> Dict[str, Any]:
-    """Generate Polish verb conjugations from English or Ukrainian input."""
+    """Generate Polish verb conjugations for specified tenses."""
+    if tenses is None:
+        tenses = ["teraźniejszy", "przeszły", "przyszły"]
+
+    client = get_openai_client()
+    tenses_str = ", ".join(tenses)
+    prompt = (
+        "You are a Polish language expert. Given a Polish verb infinitive, generate conjugations "
+        f"for the following tenses: {tenses_str}. "
+        "Return JSON with key 'conjugations' which is an object where each key is a tense name "
+        "and each value is an object with pronoun keys (ja, ty, on_ona_ono, my, wy, oni_one) "
+        "mapping to the conjugated Polish form. "
+        "For past tense, use masculine forms for ja/ty/on and feminine for ona; "
+        "provide the most common form for each pronoun. "
+        "For future tense of imperfective verbs, use 'będę + infinitive' pattern. "
+        "For perfective verbs, conjugate in the present form (which has future meaning)."
+    )
+    response = client.responses.create(
+        model=MODEL,
+        instructions=prompt,
+        input=f"Verb: {polish_infinitive}",
+        text={"format": {"type": "json_object"}},
+    )
+    content = response.output_text or "{}"
+    payload: Dict[str, Any] = json.loads(content)
+    return payload.get("conjugations", {})
+
+
+# ── Noun/Adjective declension generation ─────────────────────
+
+
+def generate_declensions_via_llm(
+    polish_word: str, part_of_speech: str, gender: str | None = None
+) -> list[dict]:
+    """Generate all 7 case declensions for a noun or adjective.
+    Returns list of dicts: {case, gender, number, form}.
+    """
     client = get_openai_client()
 
-    prompt = (
-        "You are a Polish language expert. Given a verb in English or Ukrainian, "
-        "provide the Polish infinitive and all present tense conjugations. "
-        "Return JSON only with keys: "
-        "infinitive (Polish infinitive form), "
-        "english (English translation), "
-        "ukrainian (Ukrainian translation), "
-        "conjugations (object with keys: ja, ty, on_ona_ono, my, wy, oni_one - each containing the conjugated Polish form). "
-        'Example for \'to do\': {"infinitive": "robić", "english": "to do", "ukrainian": "робити", '
-        '"conjugations": {"ja": "robię", "ty": "robisz", "on_ona_ono": "robi", "my": "robimy", "wy": "robicie", "oni_one": "robią"}}'
+    if part_of_speech == "rzeczownik":
+        prompt = (
+            "You are a Polish language expert. Given a Polish noun and its grammatical gender, "
+            "generate all 7 case forms (mianownik, dopełniacz, celownik, biernik, narzędnik, "
+            "miejscownik, wołacz) for both singular and plural. "
+            "Return JSON with key 'forms' which is an array of objects, each with: "
+            "case (string), gender (string - the noun's gender), number ('singular' or 'plural'), form (string). "
+            f"The noun's gender is: {gender or 'unknown (please determine it)'}."
+        )
+    else:  # przymiotnik
+        prompt = (
+            "You are a Polish language expert. Given a Polish adjective, "
+            "generate all 7 case forms (mianownik, dopełniacz, celownik, biernik, narzędnik, "
+            "miejscownik, wołacz) for all three genders (męski, żeński, nijaki) "
+            "in both singular and plural. "
+            "Return JSON with key 'forms' which is an array of objects, each with: "
+            "case (string), gender (string), number ('singular' or 'plural'), form (string)."
+        )
+
+    response = client.responses.create(
+        model=MODEL,
+        instructions=prompt,
+        input=f"Word: {polish_word}",
+        text={"format": {"type": "json_object"}},
     )
-
-    user_message = f"Verb ({source_language}): {verb}"
-
-    response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": user_message},
-        ],
-        temperature=0.2,
-        response_format={"type": "json_object"},
-    )
-
-    content = response.choices[0].message.content or "{}"
+    content = response.output_text or "{}"
     payload: Dict[str, Any] = json.loads(content)
+    return payload.get("forms", [])
 
+
+# ── Practice sentence generation ─────────────────────────────
+
+
+def generate_practice_sentences_via_llm(
+    polish_word: str,
+    part_of_speech: str,
+    forms: list[dict],
+) -> list[dict]:
+    """Generate simple practice sentences for each form of a word.
+
+    *forms* contains declension/conjugation data.
+    Returns list of dicts with: sentence, correct_answer, case/gender/number/pronoun/tense.
+    """
+    client = get_openai_client()
+
+    forms_json = json.dumps(forms, ensure_ascii=False)
+
+    if part_of_speech == "czasownik":
+        prompt = (
+            "You are a Polish language teacher. Given a Polish verb and its conjugated forms, "
+            "create a simple Polish sentence for EACH form where the conjugated verb is replaced by ___. "
+            "The sentence should make it clear which pronoun and tense is expected. "
+            "Include the pronoun in the sentence. "
+            "Return JSON with key 'sentences' — an array of objects with: "
+            "sentence (string with ___), correct_answer (string), pronoun (string), tense (string). "
+            "Keep sentences short and natural (5-8 words)."
+        )
+    else:
+        prompt = (
+            "You are a Polish language teacher. Given a Polish word and its declined forms, "
+            "create a simple Polish sentence for EACH form where the declined word is replaced by ___. "
+            "The sentence should make it clear which case/gender/number is expected from context. "
+            "Return JSON with key 'sentences' — an array of objects with: "
+            "sentence (string with ___), correct_answer (string), "
+            "case (string), gender (string), number (string). "
+            "Keep sentences short and natural (5-8 words)."
+        )
+
+    user_message = f"Word: {polish_word}\nPart of speech: {part_of_speech}\nForms:\n{forms_json}"
+
+    response = client.responses.create(
+        model=MODEL,
+        instructions=prompt,
+        input=user_message,
+        text={"format": {"type": "json_object"}},
+    )
+    content = response.output_text or "{}"
+    payload: Dict[str, Any] = json.loads(content)
+    return payload.get("sentences", [])
+
+
+def generate_sentence_on_the_fly(
+    polish_word: str,
+    part_of_speech: str,
+    *,
+    case: str | None = None,
+    gender: str | None = None,
+    number: str | None = None,
+    pronoun: str | None = None,
+    tense: str | None = None,
+) -> Dict[str, Any]:
+    """Generate a single practice sentence on-the-fly (used when admin toggle is on)."""
+    client = get_openai_client()
+
+    context_parts = []
+    if case:
+        context_parts.append(f"case: {case}")
+    if gender:
+        context_parts.append(f"gender: {gender}")
+    if number:
+        context_parts.append(f"number: {number}")
+    if pronoun:
+        context_parts.append(f"pronoun: {pronoun}")
+    if tense:
+        context_parts.append(f"tense: {tense}")
+    context_str = ", ".join(context_parts)
+
+    prompt = (
+        "You are a Polish language teacher. Create a simple Polish sentence using the given word "
+        "in the specified grammatical form. Replace the target word form with ___. "
+        "Also provide the correct answer (the word in the required form) and 3 plausible but wrong alternatives. "
+        "Return JSON with keys: sentence (string with ___), correct_answer (string), "
+        "wrong_options (array of 3 strings)."
+    )
+    user_message = (
+        f"Word: {polish_word}\nPart of speech: {part_of_speech}\n"
+        f"Required form: {context_str}"
+    )
+
+    response = client.responses.create(
+        model=MODEL,
+        instructions=prompt,
+        input=user_message,
+        text={"format": {"type": "json_object"}},
+    )
+    content = response.output_text or "{}"
+    payload: Dict[str, Any] = json.loads(content)
     return {
-        "infinitive": str(payload.get("infinitive", "")),
-        "english": str(payload.get("english", "")),
-        "ukrainian": str(payload.get("ukrainian", "")),
-        "conjugations": payload.get("conjugations", {}),
+        "sentence": str(payload.get("sentence", "")),
+        "correct_answer": str(payload.get("correct_answer", "")),
+        "wrong_options": payload.get("wrong_options", []),
     }

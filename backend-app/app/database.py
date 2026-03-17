@@ -1,16 +1,6 @@
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.models import (
-    UserSession,
-    UserSessionVerb,
-    UserSessionWord,
-    Verb,
-    VerbConjugation,
-    VerbPracticeRecord,
-    Word,
-    WordOption,
-    PracticeRecord,
-)
+from app.models import AppSetting, UserSession, Word
 from app.seed import seed_words
 
 DATABASE_URL = "sqlite:////app/data/polingo.db"
@@ -30,6 +20,10 @@ def init_db() -> None:
         has_session = session.exec(select(UserSession)).first()
         if not has_session:
             session.add(UserSession())
+            session.commit()
+        # Ensure default app settings
+        if not session.get(AppSetting, "generate_on_the_fly"):
+            session.add(AppSetting(key="generate_on_the_fly", value="false"))
             session.commit()
 
 

@@ -1141,3 +1141,201 @@ body {
   background: rgba(231, 76, 60, 0.15);
   color: #e74c3c;
 }
+
+/* ── Part-of-speech badge ──────────────────────────────────── */
+.pos-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(14, 228, 223, 0.15);
+  color: var(--accent-strong);
+  white-space: nowrap;
+}
+
+/* ── Endings config panel ──────────────────────────────────── */
+.endings-config {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.config-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.config-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15rem;
+  color: var(--muted);
+  min-width: 110px;
+  flex-shrink: 0;
+}
+
+.mode-tabs.compact {
+  margin-bottom: 0;
+  gap: 0.35rem;
+}
+
+.mode-tabs.compact .mode-tab {
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  border-radius: 10px;
+}
+
+/* ── Chip selectors (cases / tenses) ──────────────────────── */
+.chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.chip {
+  padding: 0.4rem 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: 0.82rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.chip.active {
+  background: rgba(14, 228, 223, 0.18);
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+/* ── Context tags on endings question ─────────────────────── */
+.context-tag {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.75rem;
+  border-radius: 6px;
+  background: rgba(255, 179, 71, 0.15);
+  color: var(--accent);
+  vertical-align: middle;
+}
+
+/* ── Endings write form ──────────────────────────────────── */
+.endings-write-form {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.endings-write-form input {
+  flex: 1;
+  border-radius: 16px;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(8, 16, 34, 0.9);
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.endings-write-form button {
+  border: none;
+  border-radius: 16px;
+  padding: 0.85rem 1.5rem;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #091730;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.endings-write-form button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Grammar reference panel ─────────────────────────────── */
+.grammar-toggle {
+  margin-top: 0.75rem;
+  background: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: var(--muted) !important;
+  font-size: 0.85rem !important;
+  font-weight: 500 !important;
+  border-radius: 10px !important;
+  padding: 0.6rem 1rem !important;
+  cursor: pointer;
+  width: 100%;
+  transition: all 0.2s ease;
+}
+
+.grammar-toggle:hover {
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: var(--text) !important;
+}
+
+.grammar-panel {
+  margin-top: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  text-align: left;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.grammar-section {
+  margin-bottom: 0.75rem;
+}
+
+.grammar-section:last-child {
+  margin-bottom: 0;
+}
+
+.grammar-section h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1rem;
+  color: var(--accent);
+}
+
+.grammar-section p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.grammar-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.grammar-table td {
+  padding: 0.3rem 0.6rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.grammar-table .grammar-key {
+  font-weight: 600;
+  color: var(--accent-strong);
+  white-space: nowrap;
+  width: 120px;
+}

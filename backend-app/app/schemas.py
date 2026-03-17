@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import ConfigDict
 from sqlmodel import SQLModel
 
 from app.models import LanguageSet, PracticeDirection, WordLanguage
+
+
+# ── Word schemas ─────────────────────────────────────────────
 
 
 class WordRead(SQLModel):
@@ -16,6 +19,8 @@ class WordRead(SQLModel):
     polish: str
     english: str
     ukrainian: str
+    part_of_speech: str = "inne"
+    gender: Optional[str] = None
 
 
 class WordWithStats(SQLModel):
@@ -25,9 +30,11 @@ class WordWithStats(SQLModel):
     polish: str
     english: str
     ukrainian: str
+    part_of_speech: str = "inne"
+    gender: Optional[str] = None
     total_attempts: int = 0
     correct_attempts: int = 0
-    error_rate: float = 0.0  # Higher = more errors
+    error_rate: float = 0.0
     enabled: bool = True
 
 
@@ -42,7 +49,7 @@ class WordCheckRequest(SQLModel):
 
 
 class WordCheckBulkRequest(SQLModel):
-    text: str  # Comma-separated words/phrases
+    text: str
 
 
 class WordCheckResult(SQLModel):
@@ -64,10 +71,13 @@ class WordCheckBulkResponse(SQLModel):
 
 class WordCheckResponse(SQLModel):
     found: bool
-    word: Optional[WordRead]
-    matched_field: Optional[str]
+    word: Optional[WordRead] = None
+    matched_field: Optional[str] = None
     created: bool = False
     source: Optional[str] = None
+
+
+# ── Practice schemas ─────────────────────────────────────────
 
 
 class PracticeSubmission(SQLModel):
@@ -89,7 +99,26 @@ class PracticeValidationResponse(SQLModel):
     correct_answer: str
     matched_via: Optional[str] = None
     alternatives: list[str] = []
-    stats: "StatsResponse"
+    stats: StatsResponse
+
+
+class StatsResponse(SQLModel):
+    today_percentage: float
+    trend: float
+    overall_percentage: float
+    available_words: int
+
+
+class PronunciationValidationResponse(SQLModel):
+    was_correct: bool
+    expected_word: str
+    transcribed_text: str
+    feedback: str
+    similarity_score: float
+    stats: StatsResponse
+
+
+# ── Session schemas ──────────────────────────────────────────
 
 
 class SessionWordAdd(SQLModel):
@@ -115,130 +144,89 @@ class WordOptionRead(SQLModel):
     value: str
 
 
-class StatsResponse(SQLModel):
-    today_percentage: float
-    trend: float
-    overall_percentage: float
-    available_words: int
-
-
-class PronunciationValidationResponse(SQLModel):
-    was_correct: bool
-    expected_word: str
-    transcribed_text: str
-    feedback: str
-    similarity_score: float
-    stats: StatsResponse
-
-
-# Verb/Endings schemas
-class VerbAddRequest(SQLModel):
-    text: str  # Verb in English or Ukrainian
-    source_language: str  # "english" or "ukrainian"
-
-
-class VerbConjugationRead(SQLModel):
-    pronoun: str
-    conjugated_form: str
-
-
-class VerbRead(SQLModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    infinitive: str
-    english: str
-    ukrainian: str
-
-
-class VerbWithConjugations(SQLModel):
-    id: int
-    infinitive: str
-    english: str
-    ukrainian: str
-    conjugations: list[VerbConjugationRead]
-    total_attempts: int = 0
-    correct_attempts: int = 0
-    error_rate: float = 0.0
-    enabled: bool = True
-
-
-class VerbAddResponse(SQLModel):
-    success: bool
-    verb: Optional[VerbWithConjugations] = None
-    message: str
-    duplicate: bool = False
-
-
-class VerbSessionState(SQLModel):
-    verbs: list[VerbWithConjugations]
-
-
-class EndingsQuestion(SQLModel):
-    verb_id: int
-    infinitive: str
-    english: str
-    ukrainian: str
-    pronoun: str
-    correct_answer: str
-    options: list[str]  # 4 shuffled options including correct
-
-
-class EndingsValidationRequest(SQLModel):
-    verb_id: int
-    pronoun: str
-    answer: str
-
-
-class EndingsValidationResponse(SQLModel):
-    was_correct: bool
-    correct_answer: str
-    stats: "EndingsStatsResponse"
-
-
-class EndingsStatsResponse(SQLModel):
-    today_percentage: float
-    trend: float
-    overall_percentage: float
-    available_verbs: int
-
-
 class WordToggleRequest(SQLModel):
     word_id: int
     enabled: bool
 
 
-class VerbToggleRequest(SQLModel):
-    verb_id: int
-    enabled: bool
+# ── Choose Translation schemas ───────────────────────────────
 
 
-# Choose Translation schemas
 class TranslationQuestion(SQLModel):
     word_id: int
     polish: str
     english: str
     ukrainian: str
-    prompt: str  # The word to translate (source)
-    correct_answer: str  # The correct translation (target)
-    options: list[str]  # 4 shuffled options including correct
-    direction: str  # "from_polish" or "to_polish"
+    prompt: str
+    correct_answer: str
+    options: list[str]
+    direction: str
 
 
 class TranslationValidationRequest(SQLModel):
     word_id: int
     language_set: LanguageSet
-    direction: str  # "from_polish" or "to_polish"
+    direction: str
     answer: str
 
 
 class TranslationValidationResponse(SQLModel):
     was_correct: bool
     correct_answer: str
-    stats: "StatsResponse"
+    stats: StatsResponse
 
 
-# Admin/Device tracking schemas
+# ── Endings practice schemas ─────────────────────────────────
+
+
+class EndingsQuestion(SQLModel):
+    word_id: int
+    polish: str
+    english: str
+    ukrainian: str
+    part_of_speech: str
+    sentence: str          # sentence with ___ placeholder
+    correct_answer: str
+    options: list[str]     # 4 options (for choose mode)
+    # Context fields
+    case: Optional[str] = None
+    gender: Optional[str] = None
+    number: Optional[str] = None
+    pronoun: Optional[str] = None
+    tense: Optional[str] = None
+    grammar_reference: dict[str, Any] = {}
+
+
+class EndingsValidationRequest(SQLModel):
+    word_id: int
+    sentence_id: Optional[int] = None
+    answer: str
+    correct_answer: str  # sent back from question for verification
+
+
+class EndingsValidationResponse(SQLModel):
+    was_correct: bool
+    correct_answer: str
+    stats: EndingsStatsResponse
+
+
+class EndingsStatsResponse(SQLModel):
+    today_percentage: float
+    trend: float
+    overall_percentage: float
+    available_words: int
+
+
+class EndingsConfigResponse(SQLModel):
+    """Available options for endings practice configuration."""
+    parts_of_speech: list[str]
+    cases: list[str]
+    tenses: list[str]
+
+
+# ── Admin schemas ────────────────────────────────────────────
+
+
 class DeviceRead(SQLModel):
     id: int
     ip_address: str
@@ -246,8 +234,8 @@ class DeviceRead(SQLModel):
     device_type: str
     browser: str
     os: str
-    first_seen: "datetime"
-    last_activity: "datetime"
+    first_seen: datetime
+    last_activity: datetime
     request_count: int
     is_active: bool
 
@@ -256,3 +244,12 @@ class DevicesResponse(SQLModel):
     devices: list[DeviceRead]
     total_count: int
     active_count: int
+
+
+class AppSettingRead(SQLModel):
+    key: str
+    value: str
+
+
+class AppSettingUpdate(SQLModel):
+    value: str
