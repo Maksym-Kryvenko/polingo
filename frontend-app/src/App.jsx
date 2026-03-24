@@ -112,6 +112,7 @@ function App() {
   const [deviceStats, setDeviceStats] = useState({ total: 0, active: 0 });
   const adminPollIntervalRef = useRef(null);
   const [generateOnTheFly, setGenerateOnTheFly] = useState(false);
+  const [ttsSource, setTtsSource] = useState("browser");
   const [sentences, setSentences] = useState([]);
   const [editingSentenceId, setEditingSentenceId] = useState(null);
   const [editingSentenceValues, setEditingSentenceValues] = useState({ sentence: "", correct_answer: "" });
@@ -220,8 +221,20 @@ function App() {
         const data = await r.json();
         const otf = data.find((s) => s.key === "generate_on_the_fly");
         setGenerateOnTheFly(otf?.value === "true");
+        const tts = data.find((s) => s.key === "tts_source");
+        setTtsSource(tts?.value ?? "browser");
       }
     } catch (e) { console.error(e); }
+  };
+
+  const fetchTtsSetting = async () => {
+    try {
+      const r = await fetch(buildUrl("admin/settings/tts_source"));
+      if (r.ok) {
+        const data = await r.json();
+        setTtsSource(data.value ?? "browser");
+      }
+    } catch (e) { /* setting may not exist yet, keep default */ }
   };
 
   const toggleOnTheFly = async () => {
@@ -233,6 +246,43 @@ function App() {
       });
       setGenerateOnTheFly(newVal);
     } catch (e) { console.error(e); }
+  };
+
+  const toggleTtsSource = async () => {
+    const newVal = ttsSource === "browser" ? "server" : "browser";
+    try {
+      await fetch(buildUrl("admin/settings/tts_source"), {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: newVal }),
+      });
+      setTtsSource(newVal);
+    } catch (e) { console.error(e); }
+  };
+
+  const ttsCache = useRef({});
+
+  const playPronunciation = async (text) => {
+    if (!text) return;
+    if (ttsSource === "server") {
+      try {
+        let url = ttsCache.current[text];
+        if (!url) {
+          const r = await fetch(buildUrl(`practice/tts?text=${encodeURIComponent(text)}`));
+          if (!r.ok) return;
+          const blob = await r.blob();
+          url = URL.createObjectURL(blob);
+          ttsCache.current[text] = url;
+        }
+        const audio = new Audio(url);
+        audio.play();
+      } catch (e) { console.error(e); }
+    } else {
+      speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "pl-PL";
+      utterance.rate = 0.9;
+      speechSynthesis.speak(utterance);
+    }
   };
 
   const fetchSentences = async () => {
@@ -316,7 +366,7 @@ function App() {
   };
 
   // ── Effects ───────────────────────────────────────────────
-  useEffect(() => { fetchStats(); fetchSession(); fetchEndingsConfig(); }, []);
+  useEffect(() => { fetchStats(); fetchSession(); fetchEndingsConfig(); fetchTtsSetting(); }, []);
 
   useEffect(() => {
     if (activePage === "manage") fetchAllWords();
@@ -793,7 +843,12 @@ function App() {
               <form onSubmit={handlePracticeSubmit} className="practice-card">
                 <div className="practice-mirror">
                   <p className="subtitle">Target language: {practiceMode === "writing" ? "Polish" : targetLabel}</p>
-                  <p className="prompt">{practiceMode === "writing" ? (writingPrompt ?? "Add words to start.") : (translationPrompt ?? "Add words to start.")}</p>
+                  <p className="prompt">
+                    {practiceMode === "writing" ? (writingPrompt ?? "Add words to start.") : (translationPrompt ?? "Add words to start.")}
+                    {practiceMode === "translation" && translationPrompt && (
+                      <button type="button" className="listen-btn" onClick={() => playPronunciation(translationPrompt)} title="Listen to pronunciation"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></button>
+                    )}
+                  </p>
                 </div>
                 <input value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder={practiceMode === "writing" ? "Type the Polish word…" : `Type the ${targetLabel} translation…`} disabled={!currentWriteTranslateWord} />
                 <div className="practice-buttons">
@@ -811,7 +866,12 @@ function App() {
                   <div className="practice-card choose-translation-card">
                     <div className="practice-mirror">
                       <p className="subtitle">Translate {practiceDirection === "from_polish" ? "from Polish" : "to Polish"}:</p>
-                      <p className="prompt choose-translation-prompt">{chooseQuestion.prompt}</p>
+                      <p className="prompt choose-translation-prompt">
+                        {chooseQuestion.prompt}
+                        {practiceDirection === "from_polish" && (
+                          <button type="button" className="listen-btn" onClick={() => playPronunciation(chooseQuestion.prompt)} title="Listen to pronunciation"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></button>
+                        )}
+                      </p>
                     </div>
                     <div className="choose-translation-options">
                       {chooseQuestion.options.map((opt, i) => (
@@ -1118,6 +1178,14 @@ function App() {
                 </label>
               </div>
               <p className="admin-info">When enabled, new sentences are generated via LLM during practice and saved for future use.</p>
+              <div className="admin-toggle-row">
+                <span>Pronunciation TTS: {ttsSource === "server" ? "Server (OpenAI)" : "Browser"}</span>
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={ttsSource === "server"} onChange={toggleTtsSource} />
+                  <span className="toggle-slider"></span>
+                </label>
+              </div>
+              <p className="admin-info">Browser uses device voices (free). Server uses OpenAI TTS (higher quality, costs API credits).</p>
             </div>
 
             {/* Sentence Management */}

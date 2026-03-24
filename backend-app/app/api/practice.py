@@ -1,6 +1,7 @@
 import random
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi.responses import Response
 from sqlmodel import Session, select
 
 from app.database import engine
@@ -8,8 +9,10 @@ from app.llm import (
     validate_translation_via_llm,
     transcribe_audio,
     evaluate_pronunciation_via_llm,
+    text_to_speech,
 )
 from app.models import (
+    AppSetting,
     PracticeRecord,
     PracticeDirection,
     Word,
@@ -355,3 +358,19 @@ def validate_translation_choice(
             correct_answer=correct_answer,
             stats=calculate_stats(session),
         )
+
+
+@router.get("/tts")
+def tts(text: str) -> Response:
+    """Generate TTS audio for a Polish word/phrase using OpenAI."""
+    if not text or not text.strip():
+        raise HTTPException(status_code=400, detail="Text is required")
+    with Session(engine) as session:
+        setting = session.get(AppSetting, "tts_source")
+        if not setting or setting.value != "server":
+            raise HTTPException(status_code=403, detail="Server TTS is disabled")
+    try:
+        audio = text_to_speech(text.strip())
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return Response(content=audio, media_type="audio/mpeg")

@@ -49,6 +49,9 @@ def init_db() -> None:
         if not session.get(AppSetting, "generate_on_the_fly"):
             session.add(AppSetting(key="generate_on_the_fly", value="false"))
             session.commit()
+        if not session.get(AppSetting, "tts_source"):
+            session.add(AppSetting(key="tts_source", value="browser"))
+            session.commit()
 
 
 def get_session() -> Session:

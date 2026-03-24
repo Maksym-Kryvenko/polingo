@@ -349,3 +349,18 @@ def fix_sentence_via_llm(
         "sentence": str(data.get("sentence", sentence)),
         "correct_answer": str(data.get("correct_answer", correct_answer)),
     }
+
+
+# ── Text-to-speech ───────────────────────────────────────────
+
+
+def text_to_speech(text: str) -> bytes:
+    """Generate speech audio for a Polish text using OpenAI TTS."""
+    client = get_openai_client()
+    response = client.audio.speech.create(
+        model="tts-1",
+        voice="nova",
+        input=text,
+        response_format="mp3",
+    )
+    return response.content
