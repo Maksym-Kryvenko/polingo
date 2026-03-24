@@ -119,6 +119,8 @@ def validate_practice(payload: PracticeValidationRequest) -> PracticeValidationR
                 language_set=payload.language_set,
                 direction=payload.direction,
                 was_correct=is_correct,
+                user_answer=payload.answer,
+                correct_answer=expected,
             )
         )
         session.commit()
@@ -163,6 +165,8 @@ def skip_practice(payload: PracticeValidationRequest) -> PracticeValidationRespo
                 language_set=payload.language_set,
                 direction=payload.direction,
                 was_correct=False,
+                user_answer="",
+                correct_answer=expected,
             )
         )
         session.commit()
@@ -216,6 +220,8 @@ async def validate_pronunciation(
                 language_set=language_set,
                 direction=PracticeDirection.pronunciation,
                 was_correct=is_correct,
+                user_answer=transcribed_text,
+                correct_answer=word.polish,
             )
         )
         session.commit()
@@ -232,7 +238,8 @@ async def validate_pronunciation(
 
 @router.get("/choose-translation/question", response_model=TranslationQuestion)
 def get_translation_question(
-    language_set: str = "english", direction: str = "from_polish"
+    language_set: str = "english", direction: str = "from_polish",
+    exclude_word_id: int | None = None,
 ) -> TranslationQuestion:
     """Get a random translation question with 4 options from session words."""
     with Session(engine) as session:
@@ -253,8 +260,11 @@ def get_translation_question(
                 detail="Need at least 4 words in session for this practice mode.",
             )
 
-        # Pick a random word as the question
-        random_sw = random.choice(session_words)
+        # Pick a random word, avoiding the previous one if possible
+        candidates = [sw for sw in session_words if sw.word_id != exclude_word_id] if exclude_word_id else session_words
+        if not candidates:
+            candidates = session_words
+        random_sw = random.choice(candidates)
         target_word = session.get(Word, random_sw.word_id)
         if not target_word:
             raise HTTPException(status_code=404, detail="Word not found")
@@ -334,6 +344,8 @@ def validate_translation_choice(
                 language_set=payload.language_set,
                 direction=practice_direction,
                 was_correct=is_correct,
+                user_answer=payload.answer,
+                correct_answer=correct_answer,
             )
         )
         session.commit()

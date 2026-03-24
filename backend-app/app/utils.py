@@ -5,28 +5,33 @@ import unicodedata
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from app.models import PracticeRecord, Word
+from app.models import EndingsPracticeRecord, PracticeRecord, Word
 from app.schemas import StatsResponse
 
 
 def calculate_stats(session: Session) -> StatsResponse:
+    """Unified stats merging PracticeRecord and EndingsPracticeRecord."""
     today = date.today()
     yesterday = today - timedelta(days=1)
 
     def aggregation(target_date: date) -> tuple[int, int]:
-        records = session.exec(
+        practice = session.exec(
             select(PracticeRecord).where(PracticeRecord.practice_date == target_date)
         ).all()
-        total = len(records)
-        correct = sum(record.was_correct for record in records)
+        endings = session.exec(
+            select(EndingsPracticeRecord).where(EndingsPracticeRecord.practice_date == target_date)
+        ).all()
+        total = len(practice) + len(endings)
+        correct = sum(r.was_correct for r in practice) + sum(r.was_correct for r in endings)
         return correct, total
 
     today_correct, today_total = aggregation(today)
     yesterday_correct, yesterday_total = aggregation(yesterday)
 
-    overall_records = session.exec(select(PracticeRecord)).all()
-    overall_total = len(overall_records)
-    overall_correct = sum(record.was_correct for record in overall_records)
+    practice_all = session.exec(select(PracticeRecord)).all()
+    endings_all = session.exec(select(EndingsPracticeRecord)).all()
+    overall_total = len(practice_all) + len(endings_all)
+    overall_correct = sum(r.was_correct for r in practice_all) + sum(r.was_correct for r in endings_all)
 
     word_count = session.scalar(select(func.count()).select_from(Word)) or 0
 

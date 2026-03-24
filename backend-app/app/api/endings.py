@@ -46,6 +46,7 @@ def _get_noun_adj_question(
     pos_value: str,
     cases: list[str],
     use_on_the_fly: bool,
+    exclude_word_id: int | None = None,
 ) -> EndingsQuestion | None:
     """Build a question for rzeczownik or przymiotnik."""
     pos_enum = PartOfSpeech(pos_value)
@@ -59,7 +60,11 @@ def _get_noun_adj_question(
     if not word_ids_with_forms:
         return None
 
-    word_id = random.choice(word_ids_with_forms)
+    # Avoid repeating the same word if possible
+    candidates = [wid for wid in word_ids_with_forms if wid != exclude_word_id]
+    if not candidates:
+        candidates = word_ids_with_forms
+    word_id = random.choice(candidates)
     word = session.get(Word, word_id)
     if not word:
         return None
@@ -69,13 +74,14 @@ def _get_noun_adj_question(
 
     # Try pre-generated sentence first
     if not use_on_the_fly:
-        sentence = session.exec(
+        sentences = session.exec(
             select(PracticeSentence).where(
                 PracticeSentence.word_id == word_id,
                 PracticeSentence.part_of_speech == pos_enum,
                 PracticeSentence.case == case_str,
             )
-        ).first()
+        ).all()
+        sentence = random.choice(sentences) if sentences else None
         if sentence:
             correct = sentence.correct_answer
             options = _build_options(session, word_id, correct, pos_value, case_str=case_str)
@@ -116,6 +122,15 @@ def _get_noun_adj_question(
         all_options = [correct] + [w for w in wrong if w != correct]
         random.shuffle(all_options)
         options = all_options[:4]
+        # Persist generated sentence for future reuse
+        if sentence_text and correct:
+            session.add(PracticeSentence(
+                word_id=word_id, part_of_speech=pos_enum,
+                sentence=sentence_text, correct_answer=correct,
+                case=case_str, gender=declension.gender.value,
+                number=declension.number.value,
+            ))
+            session.commit()
     else:
         sentence_text = f"({case_str}) ___"
         correct = declension.form
@@ -142,6 +157,7 @@ def _get_verb_question(
     session: Session,
     tenses: list[str],
     use_on_the_fly: bool,
+    exclude_word_id: int | None = None,
 ) -> EndingsQuestion | None:
     """Build a question for czasownik."""
     pos_enum = PartOfSpeech.czasownik
@@ -154,7 +170,11 @@ def _get_verb_question(
     if not word_ids_with_forms:
         return None
 
-    word_id = random.choice(word_ids_with_forms)
+    # Avoid repeating the same word if possible
+    candidates = [wid for wid in word_ids_with_forms if wid != exclude_word_id]
+    if not candidates:
+        candidates = word_ids_with_forms
+    word_id = random.choice(candidates)
     word = session.get(Word, word_id)
     if not word:
         return None
@@ -162,13 +182,14 @@ def _get_verb_question(
     tense_str = random.choice(tenses)
 
     if not use_on_the_fly:
-        sentence = session.exec(
+        sentences = session.exec(
             select(PracticeSentence).where(
                 PracticeSentence.word_id == word_id,
                 PracticeSentence.part_of_speech == pos_enum,
                 PracticeSentence.tense == tense_str,
             )
-        ).first()
+        ).all()
+        sentence = random.choice(sentences) if sentences else None
         if sentence:
             correct = sentence.correct_answer
             options = _build_options(session, word_id, correct, "czasownik", tense_str=tense_str)
@@ -207,6 +228,14 @@ def _get_verb_question(
         all_options = [correct] + [w for w in wrong if w != correct]
         random.shuffle(all_options)
         options = all_options[:4]
+        # Persist generated sentence for future reuse
+        if sentence_text and correct:
+            session.add(PracticeSentence(
+                word_id=word_id, part_of_speech=pos_enum,
+                sentence=sentence_text, correct_answer=correct,
+                pronoun=conjugation.pronoun.value, tense=tense_str,
+            ))
+            session.commit()
     else:
         sentence_text = f"{conjugation.pronoun.value} ___"
         correct = conjugation.conjugated_form
@@ -283,6 +312,7 @@ def get_endings_question(
     part_of_speech: str,
     cases: str | None = None,
     tenses: str | None = None,
+    exclude_word_id: int | None = None,
 ) -> EndingsQuestion:
     """Get an endings practice question.
 
@@ -300,10 +330,10 @@ def get_endings_question(
 
         if part_of_speech in ("rzeczownik", "przymiotnik"):
             case_list = [c.strip() for c in (cases or "biernik").split(",") if c.strip()]
-            question = _get_noun_adj_question(session, part_of_speech, case_list, use_on_the_fly)
+            question = _get_noun_adj_question(session, part_of_speech, case_list, use_on_the_fly, exclude_word_id)
         elif part_of_speech == "czasownik":
             tense_list = [t.strip() for t in (tenses or "teraźniejszy").split(",") if t.strip()]
-            question = _get_verb_question(session, tense_list, use_on_the_fly)
+            question = _get_verb_question(session, tense_list, use_on_the_fly, exclude_word_id)
         else:
             raise HTTPException(status_code=400, detail="Invalid part_of_speech")
 
@@ -328,6 +358,8 @@ def validate_endings(payload: EndingsValidationRequest) -> EndingsValidationResp
                 word_id=payload.word_id,
                 part_of_speech=word.part_of_speech,
                 was_correct=was_correct,
+                user_answer=payload.answer,
+                correct_answer=payload.correct_answer,
             ))
             session.commit()
 

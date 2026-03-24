@@ -4,8 +4,12 @@ from fastapi import APIRouter, HTTPException
 from sqlmodel import Session, select
 
 from app.database import engine
-from app.models import ConnectedDevice, AppSetting
-from app.schemas import DeviceRead, DevicesResponse, AppSettingRead, AppSettingUpdate
+from app.models import ConnectedDevice, AppSetting, PracticeSentence, Word
+from app.schemas import (
+    DeviceRead, DevicesResponse, AppSettingRead, AppSettingUpdate,
+    PracticeSentenceRead, PracticeSentenceUpdate, SentenceFixRequest,
+)
+from app.llm import fix_sentence_via_llm
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -106,3 +110,105 @@ def update_setting(key: str, payload: AppSettingUpdate) -> AppSettingRead:
         session.commit()
         session.refresh(setting)
         return AppSettingRead(key=setting.key, value=setting.value)
+
+
+# ── Sentence management ──────────────────────────────────────
+
+
+@router.get("/sentences", response_model=list[PracticeSentenceRead])
+def get_sentences() -> list[PracticeSentenceRead]:
+    """List all practice sentences with word info."""
+    with Session(engine) as session:
+        sentences = session.exec(
+            select(PracticeSentence).order_by(PracticeSentence.id.desc())
+        ).all()
+        result = []
+        for s in sentences:
+            word = session.get(Word, s.word_id)
+            result.append(PracticeSentenceRead(
+                id=s.id,
+                word_id=s.word_id,
+                word_polish=word.polish if word else "?",
+                part_of_speech=s.part_of_speech.value if hasattr(s.part_of_speech, 'value') else str(s.part_of_speech),
+                sentence=s.sentence,
+                correct_answer=s.correct_answer,
+                case=s.case,
+                gender=s.gender,
+                number=s.number,
+                pronoun=s.pronoun,
+                tense=s.tense,
+            ))
+        return result
+
+
+@router.put("/sentences/{sentence_id}", response_model=PracticeSentenceRead)
+def update_sentence(sentence_id: int, payload: PracticeSentenceUpdate) -> PracticeSentenceRead:
+    """Manually edit a sentence."""
+    with Session(engine) as session:
+        s = session.get(PracticeSentence, sentence_id)
+        if not s:
+            raise HTTPException(status_code=404, detail="Sentence not found")
+        if payload.sentence is not None:
+            s.sentence = payload.sentence
+        if payload.correct_answer is not None:
+            s.correct_answer = payload.correct_answer
+        session.add(s)
+        session.commit()
+        session.refresh(s)
+        word = session.get(Word, s.word_id)
+        return PracticeSentenceRead(
+            id=s.id,
+            word_id=s.word_id,
+            word_polish=word.polish if word else "?",
+            part_of_speech=s.part_of_speech.value if hasattr(s.part_of_speech, 'value') else str(s.part_of_speech),
+            sentence=s.sentence,
+            correct_answer=s.correct_answer,
+            case=s.case, gender=s.gender, number=s.number,
+            pronoun=s.pronoun, tense=s.tense,
+        )
+
+
+@router.post("/sentences/{sentence_id}/fix", response_model=PracticeSentenceRead)
+def fix_sentence_with_llm(sentence_id: int) -> PracticeSentenceRead:
+    """Ask LLM to fix a sentence."""
+    with Session(engine) as session:
+        s = session.get(PracticeSentence, sentence_id)
+        if not s:
+            raise HTTPException(status_code=404, detail="Sentence not found")
+        word = session.get(Word, s.word_id)
+        pos = s.part_of_speech.value if hasattr(s.part_of_speech, 'value') else str(s.part_of_speech)
+        fixed = fix_sentence_via_llm(
+            sentence=s.sentence,
+            correct_answer=s.correct_answer,
+            polish_word=word.polish if word else "",
+            part_of_speech=pos,
+        )
+        if fixed.get("sentence"):
+            s.sentence = fixed["sentence"]
+        if fixed.get("correct_answer"):
+            s.correct_answer = fixed["correct_answer"]
+        session.add(s)
+        session.commit()
+        session.refresh(s)
+        return PracticeSentenceRead(
+            id=s.id,
+            word_id=s.word_id,
+            word_polish=word.polish if word else "?",
+            part_of_speech=pos,
+            sentence=s.sentence,
+            correct_answer=s.correct_answer,
+            case=s.case, gender=s.gender, number=s.number,
+            pronoun=s.pronoun, tense=s.tense,
+        )
+
+
+@router.delete("/sentences/{sentence_id}")
+def delete_sentence(sentence_id: int) -> dict:
+    """Delete a practice sentence."""
+    with Session(engine) as session:
+        s = session.get(PracticeSentence, sentence_id)
+        if not s:
+            return {"success": False, "message": "Sentence not found"}
+        session.delete(s)
+        session.commit()
+        return {"success": True, "message": "Sentence deleted"}

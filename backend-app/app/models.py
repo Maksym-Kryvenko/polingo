@@ -161,6 +161,8 @@ class PracticeRecord(SQLModel, table=True):
     language_set: LanguageSet
     direction: PracticeDirection
     was_correct: bool
+    user_answer: Optional[str] = Field(default=None)
+    correct_answer: Optional[str] = Field(default=None)
     practice_date: date = Field(default_factory=date.today)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -170,6 +172,8 @@ class EndingsPracticeRecord(SQLModel, table=True):
     word_id: int = Field(foreign_key="word.id")
     part_of_speech: PartOfSpeech
     was_correct: bool
+    user_answer: Optional[str] = Field(default=None)
+    correct_answer: Optional[str] = Field(default=None)
     practice_date: date = Field(default_factory=date.today)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

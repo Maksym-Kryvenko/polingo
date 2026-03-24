@@ -40,7 +40,7 @@ def resolve_word_via_llm(text: str) -> Dict[str, Any]:
     response = client.responses.create(
         model=MODEL,
         instructions=prompt,
-        input=text,
+        input=f"Respond in JSON.\n{text}",
         text={"format": {"type": "json_object"}},
     )
     content = response.output_text or "{}"
@@ -82,7 +82,7 @@ def validate_translation_via_llm(
     response = client.responses.create(
         model=MODEL,
         instructions=prompt,
-        input=user_message,
+        input=f"Respond in JSON.\n{user_message}",
         text={"format": {"type": "json_object"}},
     )
     content = response.output_text or "{}"
@@ -125,7 +125,7 @@ def evaluate_pronunciation_via_llm(
     response = client.responses.create(
         model=MODEL,
         instructions=prompt,
-        input=user_message,
+        input=f"Respond in JSON.\n{user_message}",
         text={"format": {"type": "json_object"}},
     )
     content = response.output_text or "{}"
@@ -163,7 +163,7 @@ def generate_verb_conjugations_via_llm(
     response = client.responses.create(
         model=MODEL,
         instructions=prompt,
-        input=f"Verb: {polish_infinitive}",
+        input=f"Respond in JSON.\nVerb: {polish_infinitive}",
         text={"format": {"type": "json_object"}},
     )
     content = response.output_text or "{}"
@@ -204,7 +204,7 @@ def generate_declensions_via_llm(
     response = client.responses.create(
         model=MODEL,
         instructions=prompt,
-        input=f"Word: {polish_word}",
+        input=f"Respond in JSON.\nWord: {polish_word}",
         text={"format": {"type": "json_object"}},
     )
     content = response.output_text or "{}"
@@ -250,7 +250,7 @@ def generate_practice_sentences_via_llm(
             "Keep sentences short and natural (5-8 words)."
         )
 
-    user_message = f"Word: {polish_word}\nPart of speech: {part_of_speech}\nForms:\n{forms_json}"
+    user_message = f"Respond in JSON.\nWord: {polish_word}\nPart of speech: {part_of_speech}\nForms:\n{forms_json}"
 
     response = client.responses.create(
         model=MODEL,
@@ -297,7 +297,7 @@ def generate_sentence_on_the_fly(
         "wrong_options (array of 3 strings)."
     )
     user_message = (
-        f"Word: {polish_word}\nPart of speech: {part_of_speech}\n"
+        f"Respond in JSON.\nWord: {polish_word}\nPart of speech: {part_of_speech}\n"
         f"Required form: {context_str}"
     )
 
@@ -313,4 +313,39 @@ def generate_sentence_on_the_fly(
         "sentence": str(payload.get("sentence", "")),
         "correct_answer": str(payload.get("correct_answer", "")),
         "wrong_options": payload.get("wrong_options", []),
+    }
+
+
+def fix_sentence_via_llm(
+    sentence: str,
+    correct_answer: str,
+    polish_word: str,
+    part_of_speech: str,
+) -> Dict[str, Any]:
+    """Ask LLM to review and fix a practice sentence."""
+    client = get_openai_client()
+
+    prompt = (
+        "You are a Polish language expert. Review this practice sentence and fix any grammatical, "
+        "spelling, or contextual errors. The sentence has a ___ placeholder for the answer. "
+        "Make sure the sentence is natural Polish, the correct_answer fits grammatically, and the "
+        "blank placement makes sense. Return JSON with keys: sentence (fixed string with ___), "
+        "correct_answer (fixed string)."
+    )
+    user_message = (
+        f"Respond in JSON.\nWord: {polish_word}\nPart of speech: {part_of_speech}\n"
+        f"Sentence: {sentence}\nCorrect answer: {correct_answer}"
+    )
+
+    response = client.responses.create(
+        model=MODEL,
+        instructions=prompt,
+        input=user_message,
+        text={"format": {"type": "json_object"}},
+    )
+    content = response.output_text or "{}"
+    data: Dict[str, Any] = json.loads(content)
+    return {
+        "sentence": str(data.get("sentence", sentence)),
+        "correct_answer": str(data.get("correct_answer", correct_answer)),
     }

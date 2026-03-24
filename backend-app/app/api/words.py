@@ -1,3 +1,4 @@
+import asyncio
 import threading
 
 from sqlalchemy import func
@@ -373,7 +374,7 @@ def check_single_word(
 
 
 @router.post("/check/bulk", response_model=WordCheckBulkResponse)
-def check_words_bulk(payload: WordCheckBulkRequest) -> WordCheckBulkResponse:
+async def check_words_bulk(payload: WordCheckBulkRequest) -> WordCheckBulkResponse:
     text = payload.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Value is required")
@@ -382,7 +383,112 @@ def check_words_bulk(payload: WordCheckBulkRequest) -> WordCheckBulkResponse:
     if not words_to_check:
         raise HTTPException(status_code=400, detail="No valid words found")
 
-    results: list[WordCheckResult] = []
+    # Phase 1: Check DB for all words, collect those needing LLM resolution
+    need_llm: list[tuple[int, str]] = []  # (index, word_text)
+    results: list[WordCheckResult | None] = [None] * len(words_to_check)
+
+    with Session(engine) as session:
+        user_session = get_or_create_session(session)
+        existing_session_words = session.exec(
+            select(UserSessionWord.word_id).where(
+                UserSessionWord.session_id == user_session.id
+            )
+        ).all()
+        session_word_ids = set(existing_session_words)
+
+        for i, word_text in enumerate(words_to_check):
+            normalized = word_text.lower().strip()
+            found = False
+            for field in ("polish", "english", "ukrainian"):
+                statement = select(Word).where(func.lower(getattr(Word, field)) == normalized)
+                word = session.exec(statement).first()
+                if word:
+                    is_duplicate = word.id in session_word_ids
+                    results[i] = WordCheckResult(
+                        text=word_text, found=True, word=WordRead.model_validate(word),
+                        matched_field=field, created=False, source="database", duplicate=is_duplicate,
+                    )
+                    found = True
+                    break
+            if not found:
+                need_llm.append((i, word_text))
+
+    # Phase 2: Resolve unknown words via LLM concurrently
+    async def _resolve(word_text: str):
+        try:
+            return await asyncio.to_thread(resolve_word_via_llm, word_text)
+        except RuntimeError:
+            return None
+
+    if need_llm:
+        llm_tasks = [_resolve(wt) for _, wt in need_llm]
+        llm_results = await asyncio.gather(*llm_tasks)
+
+        # Phase 3: Process LLM results with DB session
+        with Session(engine) as session:
+            user_session = get_or_create_session(session)
+            # Re-fetch session word ids in case of changes
+            existing_session_words = session.exec(
+                select(UserSessionWord.word_id).where(
+                    UserSessionWord.session_id == user_session.id
+                )
+            ).all()
+            session_word_ids = set(existing_session_words)
+
+            for (idx, word_text), resolved in zip(need_llm, llm_results):
+                if resolved is None:
+                    results[idx] = WordCheckResult(text=word_text, found=False, source="llm_error")
+                    continue
+
+                required_fields = ("polish", "english", "ukrainian")
+                if not all(resolved.get(f) for f in required_fields):
+                    results[idx] = WordCheckResult(text=word_text, found=False, source="llm_incomplete")
+                    continue
+
+                # Check if LLM-resolved word already exists in DB
+                resolved_normalized = {f: resolved[f].lower().strip() for f in required_fields}
+                found_existing = False
+                for field, nv in resolved_normalized.items():
+                    statement = select(Word).where(func.lower(getattr(Word, field)) == nv)
+                    word = session.exec(statement).first()
+                    if word:
+                        is_duplicate = word.id in session_word_ids
+                        results[idx] = WordCheckResult(
+                            text=word_text, found=True, word=WordRead.model_validate(word),
+                            matched_field=field, created=False, source="database", duplicate=is_duplicate,
+                        )
+                        found_existing = True
+                        break
+
+                if not found_existing:
+                    pos = resolved.get("part_of_speech", "inne")
+                    try:
+                        pos_enum = PartOfSpeech(pos)
+                    except ValueError:
+                        pos_enum = PartOfSpeech.inne
+
+                    new_word = Word(
+                        polish=resolved["polish"], english=resolved["english"],
+                        ukrainian=resolved["ukrainian"], part_of_speech=pos_enum,
+                        gender=resolved.get("gender"),
+                    )
+                    session.add(new_word)
+                    session.commit()
+                    session.refresh(new_word)
+
+                    if pos_enum in (PartOfSpeech.rzeczownik, PartOfSpeech.przymiotnik, PartOfSpeech.czasownik):
+                        threading.Thread(
+                            target=_generate_forms_background,
+                            args=(new_word.id, new_word.polish, pos_enum.value, new_word.gender),
+                            daemon=True,
+                        ).start()
+
+                    results[idx] = WordCheckResult(
+                        text=word_text, found=True, word=WordRead.model_validate(new_word),
+                        matched_field="resolved", created=True, source="llm", duplicate=False,
+                    )
+
+    # Phase 4: Add words to session and count results
     added_count = 0
     duplicate_count = 0
     failed_count = 0
@@ -396,12 +502,9 @@ def check_words_bulk(payload: WordCheckBulkRequest) -> WordCheckBulkResponse:
         ).all()
         session_word_ids = set(existing_session_words)
 
-        for word_text in words_to_check:
-            result = check_single_word(session, word_text, session_word_ids)
-            results.append(result)
-
-            if result.found and result.word:
-                if result.duplicate:
+        for result in results:
+            if result and result.found and result.word:
+                if result.duplicate or result.word.id in session_word_ids:
                     duplicate_count += 1
                 else:
                     session.add(

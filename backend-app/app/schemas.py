@@ -224,6 +224,38 @@ class EndingsConfigResponse(SQLModel):
     tenses: list[str]
 
 
+# ── History schemas ──────────────────────────────────────────
+
+
+class HistoryRecord(SQLModel):
+    id: int
+    word_polish: str
+    word_translation: str
+    section: str  # "translation", "writing", "pronunciation", "endings"
+    was_correct: bool
+    created_at: datetime
+    user_answer: Optional[str] = None
+    correct_answer: Optional[str] = None
+
+
+class HistoryResponse(SQLModel):
+    records: list[HistoryRecord]
+    total: int
+
+
+class ExplainRequest(SQLModel):
+    word_polish: str
+    word_translation: str
+    section: str
+    user_answer: Optional[str] = None
+    correct_answer: Optional[str] = None
+    was_correct: bool
+
+
+class ExplainResponse(SQLModel):
+    explanation: str
+
+
 # ── Admin schemas ────────────────────────────────────────────
 
 
@@ -253,3 +285,31 @@ class AppSettingRead(SQLModel):
 
 class AppSettingUpdate(SQLModel):
     value: str
+
+
+# ── Sentence management schemas ──────────────────────────────
+
+
+class PracticeSentenceRead(SQLModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    word_id: int
+    word_polish: str = ""
+    part_of_speech: str
+    sentence: str
+    correct_answer: str
+    case: Optional[str] = None
+    gender: Optional[str] = None
+    number: Optional[str] = None
+    pronoun: Optional[str] = None
+    tense: Optional[str] = None
+
+
+class PracticeSentenceUpdate(SQLModel):
+    sentence: Optional[str] = None
+    correct_answer: Optional[str] = None
+
+
+class SentenceFixRequest(SQLModel):
+    sentence_id: int

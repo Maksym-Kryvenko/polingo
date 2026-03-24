@@ -34,15 +34,35 @@ const STATUS_HIDE_DELAY = 5000;
 
 function getInitialPage() {
   const hash = window.location.hash.replace("#", "");
-  if (hash === "admin") return "admin";
-  return "home";
+  const valid = ["home", "add", "practice", "pronunciation", "endings", "manage", "admin", "stats-detail"];
+  return valid.includes(hash) ? hash : "home";
 }
 
 function App() {
   const [activePage, setActivePage] = useState(getInitialPage);
+
+  // Keep URL hash in sync with activePage
+  useEffect(() => {
+    const newHash = activePage === "home" ? "" : activePage;
+    if (window.location.hash.replace("#", "") !== newHash) {
+      window.location.hash = newHash;
+    }
+  }, [activePage]);
+
+  // Handle browser back/forward
+  useEffect(() => {
+    const onHashChange = () => {
+      const hash = window.location.hash.replace("#", "");
+      const valid = ["home", "add", "practice", "pronunciation", "endings", "manage", "admin", "stats-detail"];
+      setActivePage(valid.includes(hash) ? hash : "home");
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
   const [languageSet, setLanguageSet] = useState("english");
   const [manualEntry, setManualEntry] = useState("");
   const [manualStatus, setManualStatus] = useState(null);
+  const [addingWords, setAddingWords] = useState(false);
   const [wordPool, setWordPool] = useState([]);
   const [stats, setStats] = useState(null);
   const [loadingStats, setLoadingStats] = useState(true);
@@ -84,11 +104,34 @@ function App() {
   const [editingWordId, setEditingWordId] = useState(null);
   const [editingValues, setEditingValues] = useState({ polish: "", english: "", ukrainian: "" });
   const [editSaving, setEditSaving] = useState(false);
+  const [manageFilterPoS, setManageFilterPoS] = useState(new Set());
+  const toggleManageFilter = (tag) => setManageFilterPoS((prev) => { if (tag === "all") return new Set(); const next = new Set(prev); next.has(tag) ? next.delete(tag) : next.add(tag); return next.size === 0 ? new Set() : next; });
 
   // Admin state
   const [connectedDevices, setConnectedDevices] = useState([]);
   const [deviceStats, setDeviceStats] = useState({ total: 0, active: 0 });
   const adminPollIntervalRef = useRef(null);
+  const [generateOnTheFly, setGenerateOnTheFly] = useState(false);
+  const [sentences, setSentences] = useState([]);
+  const [editingSentenceId, setEditingSentenceId] = useState(null);
+  const [editingSentenceValues, setEditingSentenceValues] = useState({ sentence: "", correct_answer: "" });
+  const [sentenceFixingId, setSentenceFixingId] = useState(null);
+  const [sentenceFilterPoS, setSentenceFilterPoS] = useState(new Set());
+  const toggleSentencePoS = (tag) => setSentenceFilterPoS((prev) => { if (tag === "all") return new Set(); const next = new Set(prev); next.has(tag) ? next.delete(tag) : next.add(tag); return next.size === 0 ? new Set() : next; });
+  const [sentenceFilterMeta, setSentenceFilterMeta] = useState(new Set());
+  const toggleSentenceMeta = (tag) => setSentenceFilterMeta((prev) => { if (tag === "all") return new Set(); const next = new Set(prev); next.has(tag) ? next.delete(tag) : next.add(tag); return next.size === 0 ? new Set() : next; });
+
+  // Stats detail / history state
+  const [historyRecords, setHistoryRecords] = useState([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [expandedExplain, setExpandedExplain] = useState(null); // record id
+  const [explainText, setExplainText] = useState("");
+  const [explainLoading, setExplainLoading] = useState(false);
+
+  // Collapsible settings state
+  const [showPracticeSettings, setShowPracticeSettings] = useState(false);
+  const [showEndingsSettings, setShowEndingsSettings] = useState(false);
 
   // ── Fetch helpers ─────────────────────────────────────────
   const fetchStats = async () => {
@@ -136,6 +179,7 @@ function App() {
       } else {
         params.set("cases", endingsCases.join(","));
       }
+      if (endingsQuestion?.word_id) params.set("exclude_word_id", endingsQuestion.word_id);
       const r = await fetch(buildUrl(`endings/question?${params}`));
       if (r.ok) setEndingsQuestion(await r.json());
       else setEndingsQuestion(null);
@@ -151,7 +195,8 @@ function App() {
 
   const fetchChooseQuestion = async () => {
     try {
-      const r = await fetch(buildUrl(`practice/choose-translation/question?language_set=${languageSet}&direction=${practiceDirection}`));
+      const excludeParam = chooseQuestion?.word_id ? `&exclude_word_id=${chooseQuestion.word_id}` : "";
+      const r = await fetch(buildUrl(`practice/choose-translation/question?language_set=${languageSet}&direction=${practiceDirection}${excludeParam}`));
       if (r.ok) setChooseQuestion(await r.json());
       else setChooseQuestion(null);
     } catch (e) { console.error(e); setChooseQuestion(null); }
@@ -168,13 +213,118 @@ function App() {
     } catch (e) { console.error(e); }
   };
 
+  const fetchAdminSettings = async () => {
+    try {
+      const r = await fetch(buildUrl("admin/settings"));
+      if (r.ok) {
+        const data = await r.json();
+        const otf = data.find((s) => s.key === "generate_on_the_fly");
+        setGenerateOnTheFly(otf?.value === "true");
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const toggleOnTheFly = async () => {
+    const newVal = !generateOnTheFly;
+    try {
+      await fetch(buildUrl("admin/settings/generate_on_the_fly"), {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: newVal ? "true" : "false" }),
+      });
+      setGenerateOnTheFly(newVal);
+    } catch (e) { console.error(e); }
+  };
+
+  const fetchSentences = async () => {
+    try {
+      const r = await fetch(buildUrl("admin/sentences"));
+      if (r.ok) setSentences(await r.json());
+    } catch (e) { console.error(e); }
+  };
+
+  const handleSaveSentence = async (id) => {
+    try {
+      const r = await fetch(buildUrl(`admin/sentences/${id}`), {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editingSentenceValues),
+      });
+      if (r.ok) {
+        const updated = await r.json();
+        setSentences((prev) => prev.map((s) => s.id === id ? updated : s));
+        setEditingSentenceId(null);
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const handleFixSentence = async (id) => {
+    setSentenceFixingId(id);
+    try {
+      const r = await fetch(buildUrl(`admin/sentences/${id}/fix`), { method: "POST" });
+      if (r.ok) {
+        const updated = await r.json();
+        setSentences((prev) => prev.map((s) => s.id === id ? updated : s));
+      }
+    } catch (e) { console.error(e); }
+    finally { setSentenceFixingId(null); }
+  };
+
+  const handleDeleteSentence = async (id) => {
+    try {
+      const r = await fetch(buildUrl(`admin/sentences/${id}`), { method: "DELETE" });
+      if (r.ok) setSentences((prev) => prev.filter((s) => s.id !== id));
+    } catch (e) { console.error(e); }
+  };
+
+  const fetchHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const r = await fetch(buildUrl(`stats/history?limit=100&language_set=${languageSet}`));
+      if (r.ok) {
+        const data = await r.json();
+        setHistoryRecords(data.records ?? []);
+        setHistoryTotal(data.total ?? 0);
+      }
+    } catch (e) { console.error(e); }
+    finally { setHistoryLoading(false); }
+  };
+
+  const fetchExplain = async (record) => {
+    setExpandedExplain(record.id);
+    setExplainText("");
+    setExplainLoading(true);
+    try {
+      const r = await fetch(buildUrl("stats/explain"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          word_polish: record.word_polish,
+          word_translation: record.word_translation,
+          section: record.section,
+          user_answer: record.user_answer,
+          correct_answer: record.correct_answer,
+          was_correct: record.was_correct,
+        }),
+      });
+      if (r.ok) {
+        const data = await r.json();
+        setExplainText(data.explanation);
+      } else {
+        setExplainText("Could not get explanation.");
+      }
+    } catch (e) { console.error(e); setExplainText("Error fetching explanation."); }
+    finally { setExplainLoading(false); }
+  };
+
   // ── Effects ───────────────────────────────────────────────
   useEffect(() => { fetchStats(); fetchSession(); fetchEndingsConfig(); }, []);
 
   useEffect(() => {
     if (activePage === "manage") fetchAllWords();
+    if (activePage === "stats-detail") fetchHistory();
     if (activePage === "admin") {
       fetchConnectedDevices();
+      fetchAdminSettings();
+      fetchSentences();
       adminPollIntervalRef.current = setInterval(fetchConnectedDevices, 5000);
     }
     return () => { if (adminPollIntervalRef.current) { clearInterval(adminPollIntervalRef.current); adminPollIntervalRef.current = null; } };
@@ -241,6 +391,7 @@ function App() {
   const handleManualSubmit = async () => {
     const trimmed = manualEntry.trim();
     if (!trimmed) { setManualStatus({ type: "error", message: "Type a word or phrase." }); return; }
+    setAddingWords(true);
     try {
       if (trimmed.includes(",")) {
         const r = await fetch(buildUrl("words/check/bulk"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: trimmed }) });
@@ -266,7 +417,7 @@ function App() {
         setManualStatus({ type: "success", message: `Saved ${p.word.polish} (${src}). ${extra}`.trim() });
       }
     } catch (e) { console.error(e); setManualStatus({ type: "error", message: "Something went wrong. Try again." }); }
-    finally { setManualEntry(""); }
+    finally { setManualEntry(""); setAddingWords(false); }
   };
 
   const handlePracticeSubmit = async (event) => {
@@ -471,7 +622,7 @@ function App() {
             Your session is saved automatically. Add words, practice, and come back later.
           </p>
         </div>
-        <div className="stats-card">
+        <div className="stats-card clickable" onClick={() => setActivePage("stats-detail")} title="Click for detailed statistics">
           <div>
             <p className="label">Today</p>
             <h3>{statsSummary.today}</h3>
@@ -553,7 +704,7 @@ function App() {
             </div>
             <div className="manual-entry">
               <input value={manualEntry} onChange={(e) => setManualEntry(e.target.value)} type="text" placeholder="Type words (e.g., hello, goodbye, robić, duży)" />
-              <button onClick={handleManualSubmit}>Validate &amp; add</button>
+              <button onClick={handleManualSubmit} disabled={addingWords}>{addingWords ? <span className="spinner" /> : "Validate & add"}</button>
             </div>
             {manualStatus && <p className={`status ${manualStatus.type}`}>{manualStatus.message}</p>}
             <div className="instruction-card">
@@ -592,23 +743,31 @@ function App() {
 
             {!shuffledWords.length && <p className="status info">Add words to your session first, then return here to practice.</p>}
 
-            {/* Mode tabs */}
-            <div className="mode-tabs">
-              <button className={`mode-tab ${practiceMode === "translation" ? "active" : ""}`} onClick={() => setPracticeMode("translation")} type="button">Translation</button>
-              <button className={`mode-tab ${practiceMode === "writing" ? "active" : ""}`} onClick={() => setPracticeMode("writing")} type="button">Writing</button>
-              <button className={`mode-tab ${practiceMode === "choose" ? "active" : ""}`} onClick={() => setPracticeMode("choose")} type="button">Choose</button>
-            </div>
+            {/* Collapsible mode settings */}
+            <button className="settings-toggle" onClick={() => setShowPracticeSettings(!showPracticeSettings)} type="button">
+              {showPracticeSettings ? "Hide settings ▲" : "Mode settings ▼"}
+            </button>
+            {showPracticeSettings && (
+              <>
+                {/* Mode tabs */}
+                <div className="mode-tabs">
+                  <button className={`mode-tab ${practiceMode === "translation" ? "active" : ""}`} onClick={() => setPracticeMode("translation")} type="button">Translation</button>
+                  <button className={`mode-tab ${practiceMode === "writing" ? "active" : ""}`} onClick={() => setPracticeMode("writing")} type="button">Writing</button>
+                  <button className={`mode-tab ${practiceMode === "choose" ? "active" : ""}`} onClick={() => setPracticeMode("choose")} type="button">Choose</button>
+                </div>
 
-            {/* Direction selector for choose mode */}
-            {practiceMode === "choose" && (
-              <div className="direction-tabs">
-                <button className={`direction-tab ${practiceDirection === "from_polish" ? "active" : ""}`} onClick={() => setPracticeDirection("from_polish")} type="button">
-                  Polish → {languageSet === "english" ? "English" : "Ukrainian"}
-                </button>
-                <button className={`direction-tab ${practiceDirection === "to_polish" ? "active" : ""}`} onClick={() => setPracticeDirection("to_polish")} type="button">
-                  {languageSet === "english" ? "English" : "Ukrainian"} → Polish
-                </button>
-              </div>
+                {/* Direction selector for choose mode */}
+                {practiceMode === "choose" && (
+                  <div className="direction-tabs">
+                    <button className={`direction-tab ${practiceDirection === "from_polish" ? "active" : ""}`} onClick={() => setPracticeDirection("from_polish")} type="button">
+                      Polish → {languageSet === "english" ? "English" : "Ukrainian"}
+                    </button>
+                    <button className={`direction-tab ${practiceDirection === "to_polish" ? "active" : ""}`} onClick={() => setPracticeDirection("to_polish")} type="button">
+                      {languageSet === "english" ? "English" : "Ukrainian"} → Polish
+                    </button>
+                  </div>
+                )}
+              </>
             )}
 
             <div className="practice-status">
@@ -706,53 +865,50 @@ function App() {
               <button className="secondary" onClick={() => setActivePage("home")}>Back to main</button>
             </div>
 
-            {/* Config panel */}
-            <div className="endings-config">
-              <div className="config-row">
-                <span className="config-label">Part of speech:</span>
-                <div className="mode-tabs compact">
-                  {(endingsConfig?.parts_of_speech ?? ["rzeczownik", "przymiotnik", "czasownik"]).map((p) => (
-                    <button key={p} className={`mode-tab ${endingsPoS === p ? "active" : ""}`} onClick={() => setEndingsPoS(p)} type="button">{p}</button>
-                  ))}
-                </div>
-              </div>
-
-              {endingsPoS !== "czasownik" && (
+            {/* Collapsible config panel */}
+            <button className="settings-toggle" onClick={() => setShowEndingsSettings(!showEndingsSettings)} type="button">
+              {showEndingsSettings ? "Hide settings ▲" : "Mode settings ▼"}
+            </button>
+            {showEndingsSettings && (
+              <div className="endings-config">
                 <div className="config-row">
-                  <span className="config-label">Cases:</span>
-                  <div className="chip-group">
-                    {(endingsConfig?.cases ?? []).map((c) => (
-                      <button key={c} className={`chip ${endingsCases.includes(c) ? "active" : ""}`} onClick={() => toggleCase(c)} type="button">{c}</button>
+                  <span className="config-label">Part of speech:</span>
+                  <div className="mode-tabs compact">
+                    {(endingsConfig?.parts_of_speech ?? ["rzeczownik", "przymiotnik", "czasownik"]).map((p) => (
+                      <button key={p} className={`mode-tab ${endingsPoS === p ? "active" : ""}`} onClick={() => setEndingsPoS(p)} type="button">{p}</button>
                     ))}
                   </div>
                 </div>
-              )}
 
-              {endingsPoS === "czasownik" && (
+                {endingsPoS !== "czasownik" && (
+                  <div className="config-row">
+                    <span className="config-label">Cases:</span>
+                    <div className="chip-group">
+                      {(endingsConfig?.cases ?? []).map((c) => (
+                        <button key={c} className={`chip ${endingsCases.includes(c) ? "active" : ""}`} onClick={() => toggleCase(c)} type="button">{c}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {endingsPoS === "czasownik" && (
+                  <div className="config-row">
+                    <span className="config-label">Tenses:</span>
+                    <div className="chip-group">
+                      {(endingsConfig?.tenses ?? []).map((t) => (
+                        <button key={t} className={`chip ${endingsTenses.includes(t) ? "active" : ""}`} onClick={() => toggleTense(t)} type="button">{t}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="config-row">
-                  <span className="config-label">Tenses:</span>
-                  <div className="chip-group">
-                    {(endingsConfig?.tenses ?? []).map((t) => (
-                      <button key={t} className={`chip ${endingsTenses.includes(t) ? "active" : ""}`} onClick={() => toggleTense(t)} type="button">{t}</button>
-                    ))}
+                  <span className="config-label">Mode:</span>
+                  <div className="mode-tabs compact">
+                    <button className={`mode-tab ${endingsMode === "choose" ? "active" : ""}`} onClick={() => setEndingsMode("choose")} type="button">Choose 1 of 4</button>
+                    <button className={`mode-tab ${endingsMode === "write" ? "active" : ""}`} onClick={() => setEndingsMode("write")} type="button">Write answer</button>
                   </div>
                 </div>
-              )}
-
-              <div className="config-row">
-                <span className="config-label">Mode:</span>
-                <div className="mode-tabs compact">
-                  <button className={`mode-tab ${endingsMode === "choose" ? "active" : ""}`} onClick={() => setEndingsMode("choose")} type="button">Choose 1 of 4</button>
-                  <button className={`mode-tab ${endingsMode === "write" ? "active" : ""}`} onClick={() => setEndingsMode("write")} type="button">Write answer</button>
-                </div>
-              </div>
-            </div>
-
-            {endingsStats && (
-              <div className="endings-stats">
-                <span>Today: {endingsStats.today_percentage}%</span>
-                <span>Overall: {endingsStats.overall_percentage}%</span>
-                <span>Words: {endingsStats.available_words}</span>
               </div>
             )}
 
@@ -803,6 +959,28 @@ function App() {
                         <h4>{key}</h4>
                         {typeof val === "string" ? (
                           <p>{val}</p>
+                        ) : typeof val === "object" && val !== null && Object.values(val).every(v => typeof v === "object" && v !== null && ("singular" in v || "plural" in v || "endings" in v)) ? (
+                          /* Gender-based endings table: columns are genders, rows are singular/plural/examples */
+                          <table className="grammar-table grammar-table-grid">
+                            <thead>
+                              <tr>
+                                <th></th>
+                                {Object.keys(val).map((gender) => (
+                                  <th key={gender} className="grammar-gender-header">{gender}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {["singular", "plural", "examples"].map((row) => (
+                                <tr key={row}>
+                                  <td className="grammar-key">{row}</td>
+                                  {Object.values(val).map((genderData, i) => (
+                                    <td key={i}>{genderData[row] ?? "—"}</td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         ) : typeof val === "object" && val !== null ? (
                           <table className="grammar-table">
                             <tbody>
@@ -835,12 +1013,29 @@ function App() {
               <div><p className="subtitle">Manage</p><h2>Your word list</h2></div>
               <button className="secondary" onClick={() => setActivePage("home")}>Back to main</button>
             </div>
+            {allWords.length > 0 && (() => {
+              const posTags = [...new Set(allWords.map((w) => w.part_of_speech || "inne"))].sort();
+              return (
+                <div className="filter-bar">
+                  <span className="filter-label">Filter:</span>
+                  <button className={`filter-chip ${manageFilterPoS.size === 0 ? "active" : ""}`} onClick={() => toggleManageFilter("all")}>All ({allWords.length})</button>
+                  {posTags.map((tag) => {
+                    const count = allWords.filter((w) => (w.part_of_speech || "inne") === tag).length;
+                    return <button key={tag} className={`filter-chip ${manageFilterPoS.has(tag) ? "active" : ""}`} onClick={() => toggleManageFilter(tag)}>{tag} ({count})</button>;
+                  })}
+                </div>
+              );
+            })()}
             <div className="manage-list">
               {allWords.length === 0 ? (
                 <p className="status info">No words in your session yet. Add some words first!</p>
-              ) : (
+              ) : (() => {
+                const filtered = manageFilterPoS.size === 0 ? allWords : allWords.filter((w) => manageFilterPoS.has(w.part_of_speech || "inne"));
+                return filtered.length === 0 ? (
+                  <p className="status info">No words match this filter.</p>
+                ) : (
                 <ul className="word-manage-list">
-                  {allWords.map((word) => (
+                  {filtered.map((word) => (
                     <li key={word.id} className={`word-manage-item ${!word.enabled ? "disabled" : ""} ${editingWordId === word.id ? "editing" : ""}`}>
                       {editingWordId === word.id ? (
                         <div className="word-edit-form">
@@ -873,12 +1068,13 @@ function App() {
                     </li>
                   ))}
                 </ul>
-              )}
+                );
+              })()}
             </div>
           </section>
         )}
 
-        {/* ── ADMIN ────────────────────────────────────── */}
+        {/* ── ADMIN ──────────────────────────────────────── */}
         {activePage === "admin" && (
           <section className="panel admin-panel">
             <div className="panel-header">
@@ -910,6 +1106,163 @@ function App() {
                 </ul>
               )}
             </div>
+
+            {/* Settings */}
+            <div className="admin-section">
+              <h3>Settings</h3>
+              <div className="admin-toggle-row">
+                <span>On-the-fly sentence generation (Endings)</span>
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={generateOnTheFly} onChange={toggleOnTheFly} />
+                  <span className="toggle-slider"></span>
+                </label>
+              </div>
+              <p className="admin-info">When enabled, new sentences are generated via LLM during practice and saved for future use.</p>
+            </div>
+
+            {/* Sentence Management */}
+            <div className="admin-section">
+              <h3>Practice Sentences ({sentences.length})</h3>
+              {sentences.length > 0 && (() => {
+                const posTags = [...new Set(sentences.map((s) => s.part_of_speech))].sort();
+                const metaTags = [...new Set(sentences.flatMap((s) => [s.case, s.tense].filter(Boolean)))].sort();
+                const filtered = sentences.filter((s) => {
+                  if (sentenceFilterPoS.size > 0 && !sentenceFilterPoS.has(s.part_of_speech)) return false;
+                  if (sentenceFilterMeta.size > 0 && !sentenceFilterMeta.has(s.case) && !sentenceFilterMeta.has(s.tense)) return false;
+                  return true;
+                });
+                return (
+                  <>
+                    <div className="filter-bar">
+                      <span className="filter-label">Type:</span>
+                      <button className={`filter-chip ${sentenceFilterPoS.size === 0 ? "active" : ""}`} onClick={() => toggleSentencePoS("all")}>All</button>
+                      {posTags.map((tag) => <button key={tag} className={`filter-chip ${sentenceFilterPoS.has(tag) ? "active" : ""}`} onClick={() => toggleSentencePoS(tag)}>{tag}</button>)}
+                    </div>
+                    {metaTags.length > 0 && (
+                      <div className="filter-bar">
+                        <span className="filter-label">Case/Tense:</span>
+                        <button className={`filter-chip ${sentenceFilterMeta.size === 0 ? "active" : ""}`} onClick={() => toggleSentenceMeta("all")}>All</button>
+                        {metaTags.map((tag) => <button key={tag} className={`filter-chip ${sentenceFilterMeta.has(tag) ? "active" : ""}`} onClick={() => toggleSentenceMeta(tag)}>{tag}</button>)}
+                      </div>
+                    )}
+                    <p className="filter-count">{filtered.length} of {sentences.length} sentences</p>
+                    {filtered.length === 0 ? (
+                      <p className="status info">No sentences match filters.</p>
+                    ) : (
+                    <ul className="sentence-list">
+                      {filtered.map((s) => (
+                    <li key={s.id} className="sentence-item">
+                      {editingSentenceId === s.id ? (
+                        <div className="sentence-edit-form">
+                          <label className="sentence-edit-label">Sentence
+                            <input className="sentence-edit-input" value={editingSentenceValues.sentence} onChange={(e) => setEditingSentenceValues((v) => ({ ...v, sentence: e.target.value }))} />
+                          </label>
+                          <label className="sentence-edit-label">Correct answer
+                            <input className="sentence-edit-input" value={editingSentenceValues.correct_answer} onChange={(e) => setEditingSentenceValues((v) => ({ ...v, correct_answer: e.target.value }))} />
+                          </label>
+                          <div className="sentence-edit-actions">
+                            <button onClick={() => handleSaveSentence(s.id)}>Save</button>
+                            <button className="secondary" onClick={() => setEditingSentenceId(null)}>Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="sentence-info">
+                            <span className="sentence-word">{s.word_polish}</span>
+                            <span className="pos-badge">{s.part_of_speech}</span>
+                            {s.case && <span className="sentence-meta">{s.case}</span>}
+                            {s.tense && <span className="sentence-meta">{s.tense}</span>}
+                            {s.pronoun && <span className="sentence-meta">{s.pronoun}</span>}
+                          </div>
+                          <div className="sentence-text">{s.sentence}</div>
+                          <div className="sentence-answer">Answer: <strong>{s.correct_answer}</strong></div>
+                          <div className="sentence-actions">
+                            <button className="sentence-edit-btn" title="Edit" onClick={() => { setEditingSentenceId(s.id); setEditingSentenceValues({ sentence: s.sentence, correct_answer: s.correct_answer }); }}>✎</button>
+                            <button className="sentence-fix-btn" title="Fix with LLM" disabled={sentenceFixingId === s.id} onClick={() => handleFixSentence(s.id)}>{sentenceFixingId === s.id ? <span className="spinner" /> : "🔧"}</button>
+                            <button className="sentence-delete-btn" title="Delete" onClick={() => handleDeleteSentence(s.id)}>✕</button>
+                          </div>
+                        </>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                    )}
+                  </>
+                );
+              })()}
+              {sentences.length === 0 && (
+                <p className="status info">No sentences yet. They are generated when adding words or during on-the-fly practice.</p>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* ── STATS DETAIL ─────────────────────────────── */}
+        {activePage === "stats-detail" && (
+          <section className="panel stats-detail-panel">
+            <div className="panel-header">
+              <div><p className="subtitle">Statistics</p><h2>Detailed History</h2></div>
+              <button className="secondary" onClick={() => setActivePage("home")}>Back to main</button>
+            </div>
+
+            <div className="stats-summary-row">
+              <div className="stats-summary-item">
+                <span className="stats-summary-label">Today</span>
+                <span className="stats-summary-value">{statsSummary.today}</span>
+              </div>
+              <div className="stats-summary-item">
+                <span className="stats-summary-label">Trend</span>
+                <span className="stats-summary-value">{statsSummary.trend}</span>
+              </div>
+              <div className="stats-summary-item">
+                <span className="stats-summary-label">Overall</span>
+                <span className="stats-summary-value">{statsSummary.overall}</span>
+              </div>
+              <div className="stats-summary-item">
+                <span className="stats-summary-label">Total answers</span>
+                <span className="stats-summary-value">{historyTotal}</span>
+              </div>
+            </div>
+
+            {historyLoading && <p className="status info">Loading history…</p>}
+
+            {!historyLoading && historyRecords.length === 0 && (
+              <p className="status info">No practice history yet. Start practicing!</p>
+            )}
+
+            {!historyLoading && historyRecords.length > 0 && (
+              <ul className="history-list">
+                {historyRecords.map((rec) => (
+                  <li key={rec.id} className={`history-item ${rec.was_correct ? "correct" : "incorrect"}`}>
+                    <div className="history-item-main">
+                      <span className={`history-dot ${rec.was_correct ? "correct" : "incorrect"}`} />
+                      <div className="history-item-info">
+                        <span className="history-word">{rec.word_polish}</span>
+                        <span className="history-translation">{rec.word_translation}</span>
+                      </div>
+                      <span className="history-section-badge">{rec.section}</span>
+                      <div className="history-answer-info">
+                        {rec.user_answer && <span className="history-user-answer">You: {rec.user_answer}</span>}
+                        {rec.correct_answer && <span className="history-correct-answer">Answer: {rec.correct_answer}</span>}
+                      </div>
+                      <span className="history-time">{new Date(rec.created_at).toLocaleString()}</span>
+                      <button
+                        className="history-explain-btn"
+                        onClick={() => expandedExplain === rec.id ? setExpandedExplain(null) : fetchExplain(rec)}
+                        type="button"
+                      >
+                        {expandedExplain === rec.id ? "Hide" : "Explain"}
+                      </button>
+                    </div>
+                    {expandedExplain === rec.id && (
+                      <div className="history-explain-panel">
+                        {explainLoading ? <p className="status info">Generating explanation…</p> : <p>{explainText}</p>}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
         )}
       </main>

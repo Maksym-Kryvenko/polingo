@@ -11,8 +11,32 @@ engine = create_engine(
 )
 
 
+def _migrate_add_columns(engine) -> None:
+    """Add new nullable columns to existing tables if missing."""
+    import sqlite3
+    url = str(engine.url).replace("sqlite:///", "")
+    try:
+        conn = sqlite3.connect(url)
+        cursor = conn.cursor()
+        for table, column in [
+            ("practicerecord", "user_answer"),
+            ("practicerecord", "correct_answer"),
+            ("endingspracticerecord", "user_answer"),
+            ("endingspracticerecord", "correct_answer"),
+        ]:
+            try:
+                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass  # DB doesn't exist yet, create_all will handle it
+
+
 def init_db() -> None:
     SQLModel.metadata.create_all(engine)
+    _migrate_add_columns(engine)
     with Session(engine) as session:
         has_words = session.exec(select(Word)).first()
         if not has_words:
