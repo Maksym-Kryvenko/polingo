@@ -2,7 +2,8 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlmodel import Session, select
 
 from app.database import engine
-from app.llm import get_openai_client, MODEL
+from app import config
+from app.llm import get_openai_client
 from app.models import EndingsPracticeRecord, PracticeRecord, Word
 from app.schemas import (
     ExplainRequest,
@@ -104,7 +105,7 @@ def explain_answer(payload: ExplainRequest) -> ExplainResponse:
         user_msg_parts.append(f"Learner's answer: {payload.user_answer}")
 
     response = client.responses.create(
-        model=MODEL,
+        model=config.text_model(),
         instructions=prompt,
         input="\n".join(user_msg_parts),
     )
