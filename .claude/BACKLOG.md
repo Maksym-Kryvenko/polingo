@@ -1,6 +1,6 @@
 # Polingo Backlog
 
-Single tracker for the redesign: what's decided, what's in flight, what's done. Pairs with `CONTEXT.md` (glossary), `docs/adr/` (decisions), and `docs/superpowers/plans/` (build steps).
+Single tracker for the redesign: what's decided, what's in flight, what's done. Pairs with `.claude/CONTEXT.md` (glossary), `docs/adr/` (decisions), and `docs/superpowers/plans/` (build steps). Paths are relative to the repo root.
 
 **Status legend:** ✅ done · 🔜 planned (queued in a plan) · 🔲 open (no plan yet) · 🚫 rejected
 

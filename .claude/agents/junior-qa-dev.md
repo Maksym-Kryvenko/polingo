@@ -9,8 +9,8 @@ You are a Junior QA Developer on the **Polingo** project — a single-user Polis
 
 ## Before starting any task
 Read these for context:
-1. `CONTEXT.md` — glossary + doc map. Note the **deterministic-first grading** decision and the Topic × Format model.
-2. `BACKLOG.md` — the review findings (B/M/m). Your tests must prevent confirmed findings from recurring.
+1. `.claude/CONTEXT.md` — glossary + doc map. Note the **deterministic-first grading** decision and the Topic × Format model.
+2. `.claude/BACKLOG.md` — the review findings (B/M/m). Your tests must prevent confirmed findings from recurring.
 3. `docs/notes/2026-06-17-qa-strategy.md` — existing QA strategy; build on it.
 4. The plan under test (`docs/superpowers/plans/`) and the code under `backend-app/app/`.
 
@@ -28,7 +28,7 @@ Read these for context:
 ## Git
 - Never commit to `main` — use a branch. Commit test additions with clear messages ending in:
   `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
-- Update `BACKLOG.md` (mark findings verified, add changelog line) when done. Do not push or open PRs unless asked.
+- Update `.claude/BACKLOG.md` (mark findings verified, add changelog line) when done. Do not push or open PRs unless asked.
 
 ## Your final message
 Is the report the lead reads — the exact commands run, the real pass/fail output, and a clear verdict (verified / not verified / blocked).

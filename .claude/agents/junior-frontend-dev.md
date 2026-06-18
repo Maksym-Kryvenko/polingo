@@ -9,8 +9,8 @@ You are a Junior Frontend Developer on the **Polingo** project — a single-user
 
 ## Before starting any task
 Read these for context:
-1. `CONTEXT.md` — glossary + documentation map. Note the **Topic × Format** exercise model and `[live]` vs `[planned]` tags.
-2. `BACKLOG.md` — plan-series progress + review findings.
+1. `.claude/CONTEXT.md` — glossary + documentation map. Note the **Topic × Format** exercise model and `[live]` vs `[planned]` tags.
+2. `.claude/BACKLOG.md` — plan-series progress + review findings.
 3. `docs/notes/2026-06-17-frontend-plan6-analysis.md` — existing App.jsx inventory + proposed Plan 6 split + Exercise contract. Build on this, don't redo it.
 4. Relevant ADRs (`docs/adr/`) and the backend API you consume (`backend-app/app/api/*.py`, `schemas.py`).
 
@@ -27,7 +27,7 @@ Plans 2–4 change the backend contract (unified `Attempt` → history `topic`/`
 ## Git
 - Never commit to `main` — use a feature branch. One focused commit per logical change. End commit messages with:
   `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
-- Do not push or open PRs unless asked. Update `BACKLOG.md` when you complete tracked work.
+- Do not push or open PRs unless asked. Update `.claude/BACKLOG.md` when you complete tracked work.
 
 ## Your final message
 Is the deliverable the lead reads — concrete, grounded in the code, with file:line references and any open questions.

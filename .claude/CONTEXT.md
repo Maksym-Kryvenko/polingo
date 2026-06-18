@@ -6,12 +6,12 @@ Each term is tagged **[live]** (exists in code today) or **[planned]** (target o
 
 ## Project documentation map
 
-Start here. All design/decision/plan documents and what each is for:
+Start here. All design/decision/plan documents and what each is for. **Paths are relative to the repo root** (this file lives in `.claude/`; the `docs/` tree is at the repo root).
 
 | Document | What it is | Read it when |
 |---|---|---|
-| `CONTEXT.md` (this file) | Domain glossary — canonical names for every concept, tagged live vs planned. | Always first. To learn what a term *means* before touching code. |
-| `BACKLOG.md` | Living tracker: plan-series progress, every review finding with status (done/planned/open/rejected), and a dated changelog. | To see what's decided, in flight, done, or deliberately rejected. Update it when you finish work. |
+| `.claude/CONTEXT.md` (this file) | Domain glossary — canonical names for every concept, tagged live vs planned. | Always first. To learn what a term *means* before touching code. |
+| `.claude/BACKLOG.md` | Living tracker: plan-series progress, every review finding with status (done/planned/open/rejected), and a dated changelog. | To see what's decided, in flight, done, or deliberately rejected. Update it when you finish work. |
 | `README.md` | User-facing overview, feature list, install/run/Docker instructions, API surface summary. | To run the app or understand existing features end-to-end. |
 | `docs/adr/0001-two-axis-exercise-model.md` | **ADR (proposed):** practice modelled as orthogonal **Topic × Format**; why, rejected alternatives, the validity-matrix consequence. | Before designing/altering how exercises are generated, catalogued, or graded. |
 | `docs/adr/0002-mcp-standalone-over-rest.md` | **ADR (proposed):** Claude Code integration as a standalone FastMCP stdio process wrapping the REST API; unreachable-backend behaviour to define. | Before building or wiring the MCP server. |
