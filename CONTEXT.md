@@ -1,0 +1,49 @@
+# Polingo — Domain Glossary
+
+Single-user, self-hosted Polish vocabulary & grammar trainer. This file is a glossary only — no implementation detail.
+
+Each term is tagged **[live]** (exists in code today) or **[planned]** (target of the redesign — see `docs/adr/`). The distinction matters: several practice-model terms below do not yet have backing data or tables.
+
+## Project documentation map
+
+Start here. All design/decision/plan documents and what each is for:
+
+| Document | What it is | Read it when |
+|---|---|---|
+| `CONTEXT.md` (this file) | Domain glossary — canonical names for every concept, tagged live vs planned. | Always first. To learn what a term *means* before touching code. |
+| `BACKLOG.md` | Living tracker: plan-series progress, every review finding with status (done/planned/open/rejected), and a dated changelog. | To see what's decided, in flight, done, or deliberately rejected. Update it when you finish work. |
+| `README.md` | User-facing overview, feature list, install/run/Docker instructions, API surface summary. | To run the app or understand existing features end-to-end. |
+| `docs/adr/0001-two-axis-exercise-model.md` | **ADR (proposed):** practice modelled as orthogonal **Topic × Format**; why, rejected alternatives, the validity-matrix consequence. | Before designing/altering how exercises are generated, catalogued, or graded. |
+| `docs/adr/0002-mcp-standalone-over-rest.md` | **ADR (proposed):** Claude Code integration as a standalone FastMCP stdio process wrapping the REST API; unreachable-backend behaviour to define. | Before building or wiring the MCP server. |
+| `docs/adr/0003-arq-redis-task-queue.md` | **ADR (proposed):** form generation moves from daemon threads to ARQ+Redis with a `forms_status`; retry/dead-letter policy to define. | Before touching background form generation or adding the queue/worker. |
+| `docs/superpowers/plans/2026-06-17-polingo-foundation.md` | **Plan 1 of 7 (executable):** foundation + correctness fixes — env config, pytest harness, fail-loud migration, model-ids→config, fixes M2/M9/B2. TDD, bite-sized steps. | When implementing the foundation. This is the first plan to execute; later plans depend on it. |
+| `docs/notes/2026-06-17-frontend-plan6-analysis.md` | **Research note:** App.jsx inventory, proposed Plan 6 component split + Exercise contract, and how Plans 2–4 ripple into the UI/API. | Before writing Plan 6, or when changing the API contract the UI consumes. |
+| `docs/notes/2026-06-17-qa-strategy.md` | **Research note:** test/QA strategy for Plans 2–4, deterministic-vs-LLM grading tests, validity-matrix tests, regression map for findings, promptfoo scope. | Before writing Plans 2–4 or 7; to design tests. |
+
+**Plan series (sequenced; only Plan 1 is written so far):** 1 Foundation & Correctness → 2 Schema unification (Alembic, virility model/B1, unified `Attempt`) → 3 Reliable form-gen (ARQ) → 4 Exercise engine (Topic×Format) → 5 MCP server → 6 Frontend split → 7 promptfoo evals. Each plan must produce working, tested software on its own. New plans live under `docs/superpowers/plans/` named `YYYY-MM-DD-<feature>.md` — **add a row above when you create one.**
+
+> **Conventions for agents:** ADRs are *decision records* (the why, hard-to-reverse); plans are *step-by-step build instructions* (the how). ADRs marked `Status: proposed` describe the target, not current code — verify against the codebase before assuming a feature exists. When a decision changes, update the ADR's `Status` (e.g. `accepted`/`superseded`) rather than deleting it.
+
+## Core terms
+
+- **Word** *[live]* — a Polish lexical entry with translations (English, Ukrainian), a part of speech, and (for nouns) a gender. The unit a learner adds to their deck.
+- **Form** *[live]* — an inflected realisation of a Word. Currently **polymorphic across two tables**: a *declension* (noun/adjective in case×gender×number, `WordDeclension`) or a *conjugation* (verb in tense×pronoun, `VerbConjugation`). There is no single `Form` table; the term is an umbrella over both. *[planned]* a virility (męskoosobowy / niemęskoosobowy) axis — see "agreement" below; without it some plural/accusative forms are unrepresentable.
+- **Deck** *[live]* — the set of Words a learner has chosen to study. Backed by `UserSession` + `UserSessionWord`; there is exactly **one** session for the single user, so "Deck" and "the session word list" are the same thing. Words in a Deck can be enabled or disabled.
+
+## Practice model
+
+- **Topic** *[partly planned]* — the grammar skill being trained, independent of how it's tested.
+  - *[live]* declension/cases, conjugation/tenses (present/past/future).
+  - *[planned, no backing data yet]* aspect (perfective vs imperfective — needs an `aspect` field on Word), agreement (gender + number + virility, and predicate agreement — needs the virility axis), government (preposition→case, negation→genitive — needs a curated rule table). Exercises on these Topics cannot be generated until their data lands.
+- **Format** *[partly planned]* — how an exercise is prompted and answered, independent of Topic.
+  - *[live]* multiple-choice, fill-blank, translate, write-to-Polish, speak (`pronunciation`).
+  - *[planned]* listen (audio→type), word-order, multi-blank cloze, matching. "speak"/"listen" depend on ASR/TTS wiring.
+- **Exercise** *[planned, ephemeral]* — one concrete question, identified by a (Topic, Format) pair plus the target Word/Form. A runtime concept, not necessarily a stored entity. Topic and Format are orthogonal, but **not every pair is valid** — see ADR-0001's validity matrix.
+- **Attempt** *[planned]* — one learner answer to one Exercise: what they answered, the correct answer, whether it was right, and the grammatical context. The redesign's intended **single source of truth** for stats and history. *Today this does not exist*: results live in two disjoint tables (`PracticeRecord`, `EndingsPracticeRecord`) with no shared supertype, and stats union them. Unifying them is the goal, not the current state.
+
+## Roles & surfaces
+
+- **Learner** *[live]* — the human practising (the single user).
+- **Language set** *[live]* — the learner's chosen translation pairing for a session: Polish↔English or Polish↔Ukrainian. A session-level switch affecting prompts and grading.
+- **MCP client** *[planned]* — Claude Code (or another MCP host) acting on the Learner's behalf to add/curate Words via the MCP server.
+- **Admin / device tracking** *[live]* — the app records connected devices (`ConnectedDevice`) and exposes admin settings. Present despite the single-user framing; used for visibility/debugging, not multi-user isolation.
