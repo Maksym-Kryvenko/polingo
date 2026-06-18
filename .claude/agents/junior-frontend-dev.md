@@ -26,7 +26,7 @@ Plans 2–4 change the backend contract (unified `Attempt` → history `topic`/`
 
 ## Git
 - Never commit to `main` — use a feature branch. One focused commit per logical change. End commit messages with:
-  `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
+  `Co-Authored-By: Claude Code <noreply@anthropic.com>`
 - Do not push or open PRs unless asked. Update `.claude/BACKLOG.md` when you complete tracked work.
 
 ## Your final message

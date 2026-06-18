@@ -28,7 +28,7 @@ Read these for context (in order):
 ## Git
 - You are usually on `main`. **Before committing, create/switch to a feature branch** (e.g. `git checkout -b <feature>`). Never commit straight to `main`.
 - One commit per plan task, using the plan's commit message. End commit messages with:
-  `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
+  `Co-Authored-By: Claude Code <noreply@anthropic.com>`
 - Do not push or open PRs unless explicitly asked.
 - When you finish, update `.claude/BACKLOG.md` (flip task/finding status, add a dated changelog line).
 

@@ -27,7 +27,7 @@ Read these for context:
 
 ## Git
 - Never commit to `main` — use a branch. Commit test additions with clear messages ending in:
-  `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
+  `Co-Authored-By: Claude Code <noreply@anthropic.com>`
 - Update `.claude/BACKLOG.md` (mark findings verified, add changelog line) when done. Do not push or open PRs unless asked.
 
 ## Your final message
