@@ -22,3 +22,4 @@ frontend-app/.env
 
 # Service files
 db_helper.py.tmp/
+backend-app/tmp_timeout_test.db
