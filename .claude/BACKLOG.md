@@ -12,13 +12,24 @@ Single tracker for the redesign: what's decided, what's in flight, what's done. 
 
 | Plan | Scope | Status |
 |---|---|---|
-| 1 — Foundation & Correctness | env config, pytest harness, fail-loud migration, model-ids→config, fixes M2/M9/B2/M10 | 🔜 **in progress** on branch `plan-1-foundation` — Tasks 1–3 done (config, harness, model-ids→config; 11 tests green); Tasks 4–6 pending (M2 fix, B2/M10 grammar, README) |
-| 2 — Schema unification | Alembic, virility model (B1), unified `Attempt` table, data migration | 🔲 not written |
-| 3 — Reliable form-gen | ARQ+Redis worker, `forms_status`, durable retries (ADR-0003) | 🔲 not written |
-| 4 — Exercise engine | Topic×Format generation + deterministic grading + validity matrix (ADR-0001) | 🔲 not written |
-| 5 — MCP server | FastMCP stdio, add/manage/stats tools (ADR-0002) | 🔲 not written |
-| 6 — Frontend split | API client, state layer, per-Format components | 🔲 not written |
-| 7 — promptfoo evals | gold-form configs, OpenAI↔Claude matrix, CI gate | 🔲 not written |
+| 1 — Foundation & Correctness | env config, pytest harness, fail-loud migration, model-ids→config, fixes M2/M9/B2/M10 | ✅ **complete** — merged to `main` (PR #1, `0de2958`); all 6 tasks, 16 tests green |
+| 2 — Schema unification | Alembic, virility model (B1), unified `Attempt` table, data migration | ✍️ **written** — `plans/2026-06-18-polingo-schema-unification.md`. **Lane L1 (critical path)**, branch `plan-2-schema` |
+| 3 — Reliable form-gen | ARQ+Redis worker, `forms_status`, durable retries (ADR-0003) | ✍️ **scaffold written** — in L4 plan `plans/2026-06-20-l4-mcp-and-worker-scaffold.md` (worker scaffold; backend wiring deferred until Plan 2 merges) |
+| 4 — Exercise engine | Topic×Format generation + deterministic grading + validity matrix (ADR-0001) | 🔲 not written (unblocks Plan 6 part 2) |
+| 5 — MCP server | FastMCP stdio, add/manage/stats tools (ADR-0002) | ✍️ **written** — `plans/2026-06-20-l4-mcp-and-worker-scaffold.md`. **Lane L4**, branch `plan-5-mcp` |
+| 6 — Frontend split | API client, state layer, per-Format components | ✍️ **part 1 written** — `plans/2026-06-20-l2-frontend-refactor.md` (API client + state layer). **Lane L2**, branch `plan-6-fe-refactor`. Part 2 (per-Format components) blocked on Plan 4 |
+| 7 — promptfoo evals | gold-form configs, OpenAI↔Claude matrix, CI gate | ⏸ **paused** — postponed; not in the current parallel round |
+
+### Horizontal execution (2026-06-20)
+
+The redesign now runs as **4 concurrent lanes** instead of one sequential backend track. See `plans/2026-06-20-horizontal-execution-map.md` (DAG, file-ownership, merge order) and the design `specs/2026-06-20-horizontal-execution-model-design.md`. Live task board: `.claude/BOARD.md`.
+
+| Lane | Branch | Plan | Merge order |
+|---|---|---|---|
+| L1 Backend A (critical) | `plan-2-schema` | Plan 2 | 2nd |
+| L2 Frontend | `plan-6-fe-refactor` | Plan 6 part 1 | 3rd |
+| L3 QA/Testing | `test-contract-freeze` | contract-freeze tests | **1st (Gate 0)** |
+| L4 Backend B | `plan-5-mcp` | Plan 5 + Plan 3 scaffold | 4th |
 
 ---
 

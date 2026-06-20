@@ -2,6 +2,12 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Horizontal execution — Lane L1 (CRITICAL PATH).** This plan runs concurrently with L2 (frontend refactor), L3 (contract-freeze tests), and L4 (MCP/worker). See `2026-06-20-horizontal-execution-map.md` for the lane DAG and merge order. **Branch:** `plan-2-schema` in an isolated worktree. **Merge order:** 2nd (after L3 contract tests, before L2/L4).
+>
+> **Owned files (this lane only):** all `backend-app/app/*.py`, `backend-app/migrations/**`, `backend-app/requirements.txt`, `backend-app/tests/test_migrations.py`, `backend-app/tests/test_models_virility.py`, `backend-app/tests/test_attempt_unification.py`. **Do NOT** touch `frontend-app/**`, `mcp_server/**`, `worker/**`, or `backend-app/tests/contract/**` (other lanes own those). **Do NOT** edit `backend-app/tests/conftest.py` beyond what existing Plan 1 tests require — L3 adds its fixtures under `tests/contract/conftest.py`.
+>
+> **Contract delta you introduce (consumers absorb on rebase):** pronoun `oni/one` → `oni`+`one`; gender `męski` → 5-gender set; history record `id` becomes the real `Attempt.id`. These are catalogued in the execution map; no action needed here beyond shipping them.
+
 **Goal:** Adopt Alembic for real schema migrations, add the virility axis (B1) via a 5-gender model plus an `oni`/`one` pronoun split, add a nullable `aspect` field to `Word`, and replace the two disjoint practice-result tables with a single `Attempt` table (M3) — migrating existing data losslessly.
 
 **Architecture:** SQLModel `str` enums are stored as plain `VARCHAR` in SQLite with **no CHECK constraint** (verified), so widening `GrammaticalGender` (3→5) and splitting `Pronoun` are pure *data + code* changes — no column-type DDL. We introduce Alembic and make `init_db()` run `alembic upgrade head` on file databases (existing pre-Alembic DBs are `stamp`ed at the baseline first); in-memory test DBs keep building straight from model metadata, and the migrations themselves are tested against a temp file DB. The `Attempt` table is a superset of both old record tables with nullable context columns and a `kind` discriminator; a migration copies both tables into it and drops them in one step.
