@@ -21,4 +21,5 @@ frontend-app/.env
 *.ipynb
 
 # Service files
-db_helper.py
+db_helper.py.tmp/
+backend-app/tmp_timeout_test.db

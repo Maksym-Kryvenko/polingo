@@ -1,22 +1,46 @@
+import logging
+import sqlite3
+
+from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from app import config
 from app.models import AppSetting, UserSession, Word
 from app.seed import seed_words
 
-DATABASE_URL = "sqlite:////app/data/polingo.db"
+logger = logging.getLogger("polingo.database")
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False},
-)
+_MEMORY_URLS = {"sqlite://", "sqlite:///:memory:"}
+
+
+def make_engine(url: str):
+    """Create an engine. In-memory DBs need StaticPool so every connection
+    shares one database; file DBs get a 30s busy timeout to avoid 'database
+    is locked' under concurrent writes (M9)."""
+    if url in _MEMORY_URLS:
+        return create_engine(
+            url,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+    return create_engine(
+        url,
+        connect_args={"check_same_thread": False, "timeout": 30},
+    )
+
+
+engine = make_engine(config.database_url())
 
 
 def _migrate_add_columns(engine) -> None:
-    """Add new nullable columns to existing tables if missing."""
-    import sqlite3
-    url = str(engine.url).replace("sqlite:///", "")
+    """Add new nullable columns to existing tables if missing. Swallows ONLY
+    the 'duplicate column' case; every other failure is logged and re-raised
+    so a broken migration cannot start the app silently (B3)."""
+    db_path = engine.url.database
+    if db_path in (None, ":memory:"):
+        return  # in-memory DB: create_all already built the current schema
+    conn = sqlite3.connect(db_path)
     try:
-        conn = sqlite3.connect(url)
         cursor = conn.cursor()
         for table, column in [
             ("practicerecord", "user_answer"),
@@ -26,12 +50,13 @@ def _migrate_add_columns(engine) -> None:
         ]:
             try:
                 cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
-            except sqlite3.OperationalError:
-                pass  # column already exists
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    logger.error("Migration failed on %s.%s: %s", table, column, exc)
+                    raise
         conn.commit()
+    finally:
         conn.close()
-    except Exception:
-        pass  # DB doesn't exist yet, create_all will handle it
 
 
 def init_db() -> None:

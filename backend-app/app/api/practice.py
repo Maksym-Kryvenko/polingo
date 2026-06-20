@@ -96,25 +96,11 @@ def validate_practice(payload: PracticeValidationRequest) -> PracticeValidationR
                 raise HTTPException(status_code=500, detail=str(exc)) from exc
 
             if llm_validation.get("is_correct"):
-                corrected = llm_validation.get("normalized_answer") or payload.answer
+                # Accept for THIS attempt only. Do not auto-persist as a
+                # canonical WordOption: a lenient LLM call would otherwise
+                # permanently whitelist a wrong (often miscased) form (M2).
                 is_correct = True
                 matched_via = "llm"
-                exists = session.exec(
-                    select(WordOption).where(
-                        WordOption.word_id == word.id,
-                        WordOption.language == target_language,
-                        WordOption.value == corrected,
-                    )
-                ).first()
-                if not exists:
-                    session.add(
-                        WordOption(
-                            word_id=word.id,
-                            language=target_language,
-                            value=corrected,
-                        )
-                    )
-                    session.commit()
 
         session.add(
             PracticeRecord(

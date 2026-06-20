@@ -4,7 +4,7 @@
 
 NOUN_ENDINGS = {
     "mianownik": {
-        "męski": {"singular": "-", "plural": "-i/-y/-owie/-e", "examples": "kot → koty, pan → panowie"},
+        "męski": {"singular": "-", "plural": "męskoosobowy: -i/-y/-owie (z alternacją: student→studenci); niemęskoosobowy: -y/-e (kot→koty)", "examples": "studenci (m-os.), koty (niem-os.)"},
         "żeński": {"singular": "-a/-i", "plural": "-y/-i/-e", "examples": "kobieta → kobiety, noc → noce"},
         "nijaki": {"singular": "-o/-e/-ę/-um", "plural": "-a/-e", "examples": "okno → okna, morze → morza"},
     },
@@ -19,7 +19,7 @@ NOUN_ENDINGS = {
         "nijaki": {"singular": "-u", "plural": "-om", "examples": "oknu, morzu, oknom"},
     },
     "biernik": {
-        "męski": {"singular": "żywotne: =dop., nieżywotne: =mian.", "plural": "żywotne: =dop., nieżywotne: =mian.", "examples": "kota (żyw.), dom (nieżyw.)"},
+        "męski": {"singular": "żywotne: =dopełniacz (widzę kota), nieżywotne: =mianownik (widzę dom)", "plural": "męskoosobowy: =dopełniacz l.mn. (widzę studentów), niemęskoosobowy: =mianownik l.mn. (widzę koty, domy)", "examples": "kota/dom (l.poj.); studentów/koty (l.mn.)"},
         "żeński": {"singular": "-ę/-∅", "plural": "-y/-i/-e", "examples": "kobietę, noc, kobiety"},
         "nijaki": {"singular": "= mianownik", "plural": "= mianownik", "examples": "okno, morze, okna"},
     },
@@ -44,7 +44,7 @@ NOUN_ENDINGS = {
 
 ADJECTIVE_ENDINGS = {
     "mianownik": {
-        "męski": {"singular": "-y/-i", "plural": "-e/-i/-y", "examples": "dobry, duży, dobrzy"},
+        "męski": {"singular": "-y/-i", "plural": "męskoosobowy: -i/-y (z alternacją: dobry→dobrzy); niemęskoosobowy: -e (dobre)", "examples": "dobrzy (m-os.), dobre (niem-os.)"},
         "żeński": {"singular": "-a", "plural": "-e", "examples": "dobra, duża, dobre"},
         "nijaki": {"singular": "-e", "plural": "-e", "examples": "dobre, duże, dobre"},
     },
@@ -59,7 +59,7 @@ ADJECTIVE_ENDINGS = {
         "nijaki": {"singular": "-emu/-iemu", "plural": "-ym/-im", "examples": "dobremu, dobrym"},
     },
     "biernik": {
-        "męski": {"singular": "żywotne: =dop., nieżywotne: =mian.", "plural": "żywotne: =dop., nieżywotne: =mian.", "examples": "dobrego (żyw.), dobry (nieżyw.)"},
+        "męski": {"singular": "żywotne: =dopełniacz (dobrego), nieżywotne: =mianownik (dobry)", "plural": "męskoosobowy: =dopełniacz l.mn. (dobrych), niemęskoosobowy: =mianownik l.mn. (dobre)", "examples": "dobrych (m-os.), dobre (niem-os.)"},
         "żeński": {"singular": "-ą/-ią", "plural": "-e", "examples": "dobrą, dobre"},
         "nijaki": {"singular": "= mianownik", "plural": "= mianownik", "examples": "dobre"},
     },

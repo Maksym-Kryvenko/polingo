@@ -36,6 +36,19 @@ Create a `.env` file in `backend-app/` with:
 ```
 OPENAI_API_KEY=your_key_here
 ```
+
+> **Local (non-Docker) runs:** the default `POLINGO_DATABASE_URL` points at the
+> container path `/app/data/polingo.db`. For a local run, set
+> `POLINGO_DATABASE_URL=sqlite:///./polingo.db` in your `.env`.
+
+### Running tests
+
+```bash
+cd backend-app
+python -m pip install -r requirements.txt
+python -m pytest
+```
+
 FastAPI serves the `/api` surface, seeds the vocabulary if the database is empty, and exposes `/words/initial`, `/words/check`, `/practice/submit`, and `/stats`.
 
 ### Frontend setup

@@ -8,6 +8,7 @@ from typing import Any, Dict
 
 from openai import OpenAI
 
+from app import config
 from app.models import PracticeDirection, WordLanguage
 
 
@@ -17,9 +18,6 @@ def get_openai_client() -> OpenAI:
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not set")
     return OpenAI(api_key=api_key)
-
-
-MODEL = "gpt-5-mini"
 
 
 # ── Word resolution ──────────────────────────────────────────
@@ -38,7 +36,7 @@ def resolve_word_via_llm(text: str) -> Dict[str, Any]:
         "Use lowercase for translations unless proper noun."
     )
     response = client.responses.create(
-        model=MODEL,
+        model=config.text_model(),
         instructions=prompt,
         input=f"Respond in JSON.\n{text}",
         text={"format": {"type": "json_object"}},
@@ -80,7 +78,7 @@ def validate_translation_via_llm(
         f"Learner answer ({target_language.value}): {answer}"
     )
     response = client.responses.create(
-        model=MODEL,
+        model=config.text_model(),
         instructions=prompt,
         input=f"Respond in JSON.\n{user_message}",
         text={"format": {"type": "json_object"}},
@@ -102,7 +100,7 @@ def transcribe_audio(audio_data: bytes, filename: str = "audio.webm") -> str:
     audio_file = io.BytesIO(audio_data)
     audio_file.name = filename
     response = client.audio.transcriptions.create(
-        model="whisper-1",
+        model=config.stt_model(),
         file=audio_file,
         language="pl",
     )
@@ -123,7 +121,7 @@ def evaluate_pronunciation_via_llm(
         f"Transcribed speech: {transcribed_text}"
     )
     response = client.responses.create(
-        model=MODEL,
+        model=config.text_model(),
         instructions=prompt,
         input=f"Respond in JSON.\n{user_message}",
         text={"format": {"type": "json_object"}},
@@ -161,7 +159,7 @@ def generate_verb_conjugations_via_llm(
         "For perfective verbs, conjugate in the present form (which has future meaning)."
     )
     response = client.responses.create(
-        model=MODEL,
+        model=config.text_model(),
         instructions=prompt,
         input=f"Respond in JSON.\nVerb: {polish_infinitive}",
         text={"format": {"type": "json_object"}},
@@ -202,7 +200,7 @@ def generate_declensions_via_llm(
         )
 
     response = client.responses.create(
-        model=MODEL,
+        model=config.text_model(),
         instructions=prompt,
         input=f"Respond in JSON.\nWord: {polish_word}",
         text={"format": {"type": "json_object"}},
@@ -253,7 +251,7 @@ def generate_practice_sentences_via_llm(
     user_message = f"Respond in JSON.\nWord: {polish_word}\nPart of speech: {part_of_speech}\nForms:\n{forms_json}"
 
     response = client.responses.create(
-        model=MODEL,
+        model=config.text_model(),
         instructions=prompt,
         input=user_message,
         text={"format": {"type": "json_object"}},
@@ -302,7 +300,7 @@ def generate_sentence_on_the_fly(
     )
 
     response = client.responses.create(
-        model=MODEL,
+        model=config.text_model(),
         instructions=prompt,
         input=user_message,
         text={"format": {"type": "json_object"}},
@@ -338,7 +336,7 @@ def fix_sentence_via_llm(
     )
 
     response = client.responses.create(
-        model=MODEL,
+        model=config.text_model(),
         instructions=prompt,
         input=user_message,
         text={"format": {"type": "json_object"}},
@@ -358,8 +356,8 @@ def text_to_speech(text: str) -> bytes:
     """Generate speech audio for a Polish text using OpenAI TTS."""
     client = get_openai_client()
     response = client.audio.speech.create(
-        model="tts-1",
-        voice="nova",
+        model=config.tts_model(),
+        voice=config.tts_voice(),
         input=text,
         response_format="mp3",
     )
