@@ -32,9 +32,12 @@ In `frontend-app/package.json`, add to `devDependencies`:
 ```json
     "vitest": "^2.0.0",
     "@testing-library/react": "^16.0.0",
+    "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.4.0",
     "jsdom": "^25.0.0"
 ```
+
+> `@testing-library/dom` is a **required peer** of `@testing-library/react` v16 (de-bundled since v14) — omitting it makes `renderHook` fail to resolve. Vitest 2 is compatible with the installed Vite 5 / React 18; jsdom 25 needs Node 18+.
 
 and add to `scripts`:
 
@@ -117,13 +120,11 @@ Create `frontend-app/src/api/session.test.js`:
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as sessionApi from "./session";
 
+// apiFetch reads resp.text() then JSON.parses, so the mock returns text().
+const mockOk = (obj) => ({ ok: true, text: () => Promise.resolve(JSON.stringify(obj)) });
+
 beforeEach(() => {
-  global.fetch = vi.fn(() =>
-    Promise.resolve({
-      ok: true,
-      json: () => Promise.resolve({ language_set: "english", words: [] }),
-    })
-  );
+  global.fetch = vi.fn(() => Promise.resolve(mockOk({ language_set: "english", words: [] })));
 });
 
 describe("session api", () => {
@@ -152,31 +153,35 @@ Expected: FAIL — `./session` does not exist.
 
 - [ ] **Step 3: Create the base helper**
 
-Create `frontend-app/src/api/base.js` (mirror the current `App.jsx:3` base-URL resolution exactly so behavior is unchanged):
+Create `frontend-app/src/api/base.js`. **Match the current code EXACTLY** — `App.jsx:3` uses the nullish operator `??` (NOT `||`; `??` only falls back on null/undefined, so an empty-string `VITE_API_BASE_URL` is preserved), and every call goes through a `buildUrl(path) => \`${API_BASE_URL}/${path}\`` helper (`App.jsx:32`) where `path` has **no leading slash** (e.g. `buildUrl("session")`).
 
 ```javascript
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_API_BASE_URL ??
   `http://${window.location.hostname}:8000/api`;
 
+// New client convention: paths carry a LEADING slash (e.g. "/session").
+// API_BASE_URL has no trailing slash, so the join is exact. (This replaces the
+// old App.jsx buildUrl("session") no-slash convention, which is removed in Task 4.)
 export async function apiFetch(path, { method = "GET", body, headers, raw } = {}) {
   const opts = { method, headers: { ...(headers || {}) } };
-  if (body !== undefined && !(body instanceof FormData)) {
+  if (body instanceof FormData) {
+    opts.body = body;
+  } else if (body !== undefined) {
     opts.headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body);
-  } else if (body instanceof FormData) {
-    opts.body = body;
   }
   const resp = await fetch(`${API_BASE_URL}${path}`, opts);
-  if (raw) return resp;
-  if (!resp.ok) {
-    throw new Error(`HTTP ${resp.status} on ${method} ${path}`);
-  }
-  return resp.json();
+  if (raw) return resp;          // caller inspects resp.ok / blob itself
+  if (!resp.ok) return null;     // NON-THROWING: mirrors the old `if (r.ok) {...}` swallow
+  const text = await resp.text();
+  return text ? JSON.parse(text) : null;  // tolerate empty/204 bodies (DELETEs)
 }
 ```
 
-> **Behavior-preservation note:** the current `App.jsx` calls do not all throw on non-ok responses. To stay 1:1, the `raw` option returns the raw `Response` for the handful of fire-and-forget / blob calls (TTS, pronunciation). Audit each call site in Task 3 and pass `raw: true` where the original code inspected `resp` directly instead of `resp.json()`.
+> **Behavior-preservation (critic-driven, important):** the existing `App.jsx` fetches almost all do `const r = await fetch(...); if (r.ok) { setX(await r.json()); }` and **swallow** failures (no throw). So `apiFetch` is **non-throwing**: it returns `null` on non-ok and tolerates empty bodies. This keeps the mechanical swap 1:1. Two consequences for Task 4:
+> - At each migrated call site, the old `if (r.ok)` guard becomes "if the returned value is non-null" — preserve any `else` branch (e.g. `fetchEndingsQuestion` sets the question to `null` on failure; `fetchTtsSetting` must stay silent on a 404). Reproduce each else-branch explicitly.
+> - **`raw: true`** is for sites that read non-JSON or inspect the response directly: the **TTS blob** fetch (`playPronunciation`, App.jsx ~270) and the **pronunciation upload** (App.jsx ~559, though it does read json — keep non-raw). Fire-and-forget calls that never read a body (toggleOnTheFly/toggleTtsSource, deleteDevice/clearDevices, chooseSkip, endingsSkip, deleteWord, deleteSentence) are safe with the non-throwing empty-body handling above — they just ignore the returned `null`.
 
 - [ ] **Step 4: Create the session client**
 
@@ -223,9 +228,9 @@ git commit -m "feat(fe): extract API base helper + session client (tested)"
 Repeat the Task-2 pattern per domain. The full endpoint→function mapping (from the App.jsx audit):
 
 - **words.js:** `getInitial(count)` → `GET /words/initial?count=`; `updateWord(id, {polish,english,ukrainian})` → `PUT /words/{id}`; `checkWord(text)` → `POST /words/check`; `checkWordsBulk(text)` → `POST /words/check/bulk`.
-- **practice.js:** `submit({word_id,language_set,direction,was_correct})` → `POST /practice/submit`; `validate(payload)` → `POST /practice/validate`; `skip(payload)` → `POST /practice/skip`; `chooseQuestion({language_set,direction,exclude_word_id})` → `GET /practice/choose-translation/question`; `chooseValidate(payload)` → `POST /practice/choose-translation/validate`; `submitPronunciation(formData)` → `POST /practice/pronunciation` (`body: formData`); `ttsUrl(text)` → returns the URL string `${API_BASE_URL}/practice/tts?text=` (keep as URL builder, not a fetch — the original caches blobs via `raw`).
-- **endings.js:** `getConfig()` → `GET /endings/config`; `getQuestion({part_of_speech,cases,tenses,exclude_word_id})` → `GET /endings/question`; `validate({word_id,answer,correct_answer})` → `POST /endings/validate`; `getStats()` → `GET /endings/stats`.
-- **stats.js:** `getStats()` → `GET /stats`; `getHistory({limit,language_set})` → `GET /stats/history`; `explain(payload)` → `POST /stats/explain`.
+- **practice.js:** `validate(payload)` → `POST /practice/validate`; `skip(payload)` → `POST /practice/skip`; `chooseQuestion({language_set,direction,exclude_word_id})` → `GET /practice/choose-translation/question`; `chooseValidate(payload)` → `POST /practice/choose-translation/validate`; `submitPronunciation(formData)` → `POST /practice/pronunciation` (`body: formData`, returns json — non-raw); `ttsUrl(text)` → returns the URL string `${API_BASE_URL}/practice/tts?text=...` (URL builder, not a fetch). **Note:** `App.jsx` has NO `/practice/submit` call — do not add a `submit()` function (that endpoint exists server-side but is unused by the UI). **"Choose skip"** is `chooseValidate` with `answer: ""` (not a distinct endpoint).
+- **endings.js:** `getConfig()` → `GET /endings/config`; `getQuestion({part_of_speech,cases,tenses,exclude_word_id})` → `GET /endings/question`; `validate({word_id,answer,correct_answer})` → `POST /endings/validate`; `getStats()` → `GET /endings/stats`. **"Endings skip"** is `validate` with `answer: ""` (not a distinct endpoint).
+- **stats.js:** `getStats()` → `GET /stats`; `getHistory({limit,language_set})` → `GET /stats/history`; `explain(payload)` → `POST /stats/explain` where payload is `{word_polish, word_translation, section, user_answer, correct_answer, was_correct}` (the `section` field is pre-Plan-2 naming — see the rebase note).
 - **admin.js:** `getDevices()` → `GET /admin/devices`; `deleteDevice(id)` → `DELETE /admin/devices/{id}`; `clearDevices()` → `DELETE /admin/devices`; `getSettings()` → `GET /admin/settings`; `getSetting(key)` → `GET /admin/settings/{key}`; `updateSetting(key, value)` → `PUT /admin/settings/{key}` body `{value}`; `getSentences()` → `GET /admin/sentences`; `saveSentence(id, {sentence,correct_answer})` → `PUT /admin/sentences/{id}`; `fixSentence(id)` → `POST /admin/sentences/{id}/fix`; `deleteSentence(id)` → `DELETE /admin/sentences/{id}`.
 
 - [ ] **Step 1: Write one test per module (query-string + body assertions)**
@@ -238,7 +243,7 @@ import * as statsApi from "./stats";
 
 beforeEach(() => {
   global.fetch = vi.fn(() =>
-    Promise.resolve({ ok: true, json: () => Promise.resolve({ records: [], total: 0 }) })
+    Promise.resolve({ ok: true, text: () => Promise.resolve(JSON.stringify({ records: [], total: 0 })) })
   );
 });
 
@@ -332,10 +337,12 @@ For each remaining domain, replace its inline `fetch` calls with the client func
 git commit -m "refactor(fe): route <domain> calls through API client"
 ```
 
-- [ ] **Step 6: Confirm no raw fetch remains for migrated domains**
+- [ ] **Step 6: Remove the dead `buildUrl`/`API_BASE_URL` locals and confirm no raw fetch remains**
 
-Run: `cd frontend-app && grep -n "fetch(\`\${API_BASE_URL}" src/App.jsx`
-Expected: only the intentionally-`raw` calls remain (pronunciation upload, TTS blob fetch) — everything else goes through `api.*`. Document any remaining raw call with a `// raw: <reason>` comment.
+All inline calls go through `const buildUrl = (path) => \`${API_BASE_URL}/${path}\`` (`App.jsx:32`), e.g. `fetch(buildUrl("session"))`. After migrating every domain, delete the local `API_BASE_URL` (App.jsx:3) **and** `buildUrl` (App.jsx:32) — the TTS URL now comes from `api.practice.ttsUrl`.
+
+Run: `cd frontend-app && grep -n "buildUrl(\|API_BASE_URL" src/App.jsx`
+Expected: **no output** (both locals removed; nothing references them). If the TTS blob fetch is still inline, it must use `api.practice.ttsUrl(text)` for the URL and `{ raw: true }`-style direct `fetch` is acceptable only with a `// raw: blob` comment.
 
 ---
 
@@ -362,7 +369,7 @@ beforeEach(() => {
   global.fetch = vi.fn(() =>
     Promise.resolve({
       ok: true,
-      json: () => Promise.resolve({ language_set: "english", words: [{ id: 1 }] }),
+      text: () => Promise.resolve(JSON.stringify({ language_set: "english", words: [{ id: 1 }] })),
     })
   );
 });
@@ -401,15 +408,20 @@ export function useSession() {
   const [languageSet, setLanguageSet] = useState("english");
   const [wordPool, setWordPool] = useState([]);
   const [stats, setStats] = useState(null);
+  const [loadingStats, setLoadingStats] = useState(false);  // preserve the hero "loading…" label
 
   const refreshSession = useCallback(async () => {
     const data = await api.session.getSession();
+    if (!data) return;                 // non-throwing apiFetch returns null on failure
     setLanguageSet(data.language_set);
     setWordPool(data.words || []);
   }, []);
 
   const refreshStats = useCallback(async () => {
-    setStats(await api.stats.getStats());
+    setLoadingStats(true);
+    const data = await api.stats.getStats();
+    if (data) setStats(data);
+    setLoadingStats(false);
   }, []);
 
   const changeLanguage = useCallback(async (next) => {
@@ -422,10 +434,15 @@ export function useSession() {
     refreshStats();
   }, [refreshSession, refreshStats]);
 
-  return { languageSet, wordPool, stats, refreshSession, refreshStats, changeLanguage,
-           setLanguageSet, setWordPool };
+  return { languageSet, wordPool, stats, loadingStats, refreshSession, refreshStats,
+           changeLanguage, setLanguageSet, setWordPool };
 }
 ```
+
+> **Cross-cutting warnings (critic-driven — `languageSet` is the most-referenced var in the file):**
+> - **Enumerate every consumer before wiring.** `languageSet` is read by `fetchHistory` (~331), `fetchChooseQuestion` (~200), the practice/validate/skip/pronunciation handlers (~480/497/513/573), and the page-change effect's dep array (~402). `setWordPool` is called by `handleLoadInitial` (~436) and `handleManualSubmit` (~464); `setLanguageSet` by `handleLanguageChange` (~423) and the home `<select>` onChange (~696). All of these must now read the hook's value/setters — grep `languageSet`, `setLanguageSet`, `setWordPool`, `wordPool` in App.jsx and update each.
+> - **Do NOT delete App's mount effect wholesale.** The current mount effect (~369) also calls `fetchEndingsConfig()` and `fetchTtsSetting()`. `useSession` only takes over session+stats; those two loaders must remain in App (or move to their own hooks in the follow-up). Removing them silently breaks endings config + TTS source loading.
+> - **StrictMode:** if `main.jsx` wraps `<App/>` in `<React.StrictMode>`, the hook's mount effect double-fires in dev (same as the current App). The test uses `waitFor`, which tolerates this. Confirm StrictMode status; behavior is preserved either way.
 
 - [ ] **Step 4: Run the hook test**
 
@@ -499,7 +516,9 @@ git commit -m "docs(fe): record refactor status and remaining extraction"
 
 - API client covers all 24 endpoints from the App.jsx audit (Tasks 2–3). ✓
 - Vitest infra added since none existed (Task 1). ✓
-- Behavior preserved: base-URL resolution copied verbatim; `raw` option preserves non-json call sites; build run after every rewire (Task 4). ✓
+- Behavior preserved: base-URL uses `??` (not `||`) to match `App.jsx:3`; `apiFetch` is **non-throwing** (returns null on non-ok, tolerates empty/204 bodies) to mirror the existing `if (r.ok)` swallow pattern; `buildUrl`+`API_BASE_URL` locals are removed together (Task 4 Step 6 grep); `raw` reserved for the TTS blob; build run after every rewire. ✓
+- `languageSet`/`wordPool` consumers enumerated; orphaned mount loaders (endingsConfig/tts) retained; `loadingStats` preserved; StrictMode noted (Task 5). ✓
+- No invented endpoints: `practice.submit` dropped (unused by UI); choose/endings "skip" documented as validate-with-empty-answer; `section` field in explain body flagged for the Plan-2 rebase. ✓
 - State-layer extraction demonstrated on 2 domains with the remaining 6 explicitly listed as same-pattern follow-up (Tasks 5–6) — avoids a risky 66-variable big-bang. ✓
 - Per-Format components correctly deferred to Plan 4/Plan 6 part 2. ✓
 - Contract delta from Plan 2 documented for rebase (Task 6). ✓

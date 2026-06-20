@@ -24,11 +24,14 @@ From the live routers (all under `/api`):
 - **practice:** `POST /practice/submit`, `POST /practice/validate`, `POST /practice/skip`, `GET /practice/choose-translation/question`, `POST /practice/choose-translation/validate`
 - **session:** `GET /session`, `PUT /session/language`, `POST /session/words`, `POST /session/words/bulk`, `GET /session/words/all`, `PUT /session/words/toggle`, `DELETE /session/words/{id}`
 - **stats:** `GET /stats`, `GET /stats/history`, `POST /stats/explain`
-- **endings:** `GET /endings/config`, `GET /endings/question`, `POST /endings/validate`, `GET /endings/stats`
+- **endings:** `GET /endings/config`, `POST /endings/validate`, `GET /endings/stats`
 - **admin:** `GET /admin/devices`, `GET /admin/settings`, `GET /admin/settings/{key}`, `PUT /admin/settings/{key}`, `GET /admin/sentences`
 - **health:** `GET /healthz`
 
-> Out of scope for golden tests (require real binary I/O / external services that `fake_llm` does not stub cleanly): `POST /practice/pronunciation` (multipart audio + STT), `GET /practice/tts` (audio bytes), `POST /admin/sentences/{id}/fix` (LLM regen). Document these as "contract not frozen — manual" in the lane's final task rather than asserting on them.
+> **Not frozen (data/IO dependencies `fake_llm` can't satisfy):**
+> - `GET /endings/question` — needs `WordDeclension`/`VerbConjugation` + `PracticeSentence` rows that only exist after background form-gen; on a freshly-seeded DB it returns **404** (`fake_llm` stubs form-gen to `[]`). We assert the **404 shape** in Task 2 rather than a 200 body.
+> - `GET /practice/choose-translation/question` — requires ≥4 session words; the `seeded_client` attaches 6 (see Task 1), so this IS frozen.
+> - `POST /practice/pronunciation` (multipart audio + STT), `GET /practice/tts` (audio bytes), `POST /admin/sentences/{id}/fix` (LLM regen) — real binary I/O / live LLM; documented manual-only in Task 4.
 
 ---
 
@@ -51,11 +54,11 @@ Create `backend-app/tests/contract/conftest.py`:
 ```python
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.database import engine
-from app.main_app import app  # see Step 3 note — adjust import to the real app object
-from app.models import AppSetting, UserSession, Word
+from main import app  # root conftest.py uses this exact import; main.py defines `app`
+from app.models import AppSetting, UserSession, UserSessionWord, Word
 from app.seed import seed_words
 
 
@@ -64,23 +67,32 @@ def seeded_client():
     """A TestClient backed by a freshly-seeded in-memory DB.
 
     fresh_db (root conftest, autouse) has already dropped+created the schema for
-    this test. We seed the canonical words + a default session + the AppSettings
-    that init_db() would normally create, reproducing a first-run production DB.
+    this test (autouse fixtures run before requested ones at the same scope). We
+    seed the canonical words + a default session + the AppSettings that init_db()
+    would create, AND attach the first 6 words to the session so endpoints that
+    require a populated session (choose-translation needs >=4) behave like prod.
+    The in-memory engine uses StaticPool, so this session and the TestClient
+    request handlers share one DB.
     """
     with Session(engine) as session:
-        if not session.query(Word).first():
-            seed_words(session)
-        if not session.query(UserSession).first():
-            session.add(UserSession())
-            session.commit()
+        seed_words(session)  # fresh_db guarantees empty tables; no guard needed
+        user_session = UserSession()
+        session.add(user_session)
+        session.commit()
+        session.refresh(user_session)
+        first_words = session.exec(select(Word).limit(6)).all()
+        for w in first_words:
+            session.add(UserSessionWord(session_id=user_session.id, word_id=w.id, enabled=True))
         for key, value in (("generate_on_the_fly", "false"), ("tts_source", "browser")):
-            if not session.get(AppSetting, key):
-                session.add(AppSetting(key=key, value=value))
-                session.commit()
+            session.add(AppSetting(key=key, value=value))
+        session.commit()
     return TestClient(app)
 ```
 
-> **Import note (resolve before running):** the FastAPI app object is created in `backend-app/main.py` (top-level), imported in tests as `from main import app` — verify by reading `backend-app/main.py` and `backend-app/tests/conftest.py` (the root conftest already imports `app`; copy its exact import line). Replace the `from app.main_app import app` placeholder with that exact import. Likewise confirm `seed_words` and the model names against `app/seed.py` / `app/models.py`.
+> **Resolve before running (judgement calls):**
+> - The `from main import app` line is copied from the root `conftest.py` — confirm it matches.
+> - **Verify `UserSessionWord`'s real field names** against `app/models.py` (the FK may be `session_id` or `user_session_id`; `enabled` may differ). Read the model and the existing `/api/session/words` handler in `app/api/session.py` to copy the exact attach pattern. If unsure, attach words via the HTTP API inside the fixture instead: `client = TestClient(app); [client.post("/api/session/words", json={"word_id": w.id}) for w in first_words]` — this guarantees correctness without guessing the schema.
+> - Confirm `seed_words` signature against `app/seed.py`.
 
 - [ ] **Step 3: Verify the fixture wiring with a trivial health test**
 
@@ -212,7 +224,17 @@ def test_admin_sentences_contract(seeded_client):
     resp = seeded_client.get("/api/admin/sentences")
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
+
+
+def test_endings_question_404_on_empty_forms(seeded_client):
+    # No declension/conjugation/sentence rows exist on a freshly-seeded DB
+    # (fake_llm stubs form-gen to []), so the endpoint has no question to serve.
+    # Freeze the 404 shape; a 200 contract is only testable once form-gen runs.
+    resp = seeded_client.get("/api/endings/question?part_of_speech=rzeczownik")
+    assert resp.status_code == 404
 ```
+
+> Verify the 404: read `app/api/endings.py` — if "no words available" raises a different status (e.g. 400), adjust the assertion to the real current status. The point is to freeze *whatever* the current empty-DB behavior is.
 
 - [ ] **Step 2: Run them**
 
@@ -370,7 +392,8 @@ git commit -m "test(contract): document un-frozen endpoints; full suite green"
 
 ## Self-review
 
-- Every frozen endpoint from the inventory has a test (Tasks 2–3). Un-frozen ones documented (Task 4). ✓
-- No app code modified; root `conftest.py` untouched (fixtures live in `tests/contract/conftest.py`). ✓
-- Volatile values (gender, history id, pronoun) are asserted by type/shape only, so Plan 2's contract delta does not break the suite on rebase. ✓
-- One judgement call (the `app`/`seed_words` import line) is flagged with explicit resolution instructions in Task 1 Step 2. ✓
+- Every **frozen** endpoint from the inventory has a test (Tasks 2–3); `endings/question` is frozen at its 404 empty-DB shape; the three IO/LLM endpoints are documented manual-only (Task 4). ✓
+- `choose-translation/question` works because `seeded_client` attaches 6 session words (the ≥4 requirement). ✓
+- No app code modified; root `conftest.py` untouched (fixtures live in `tests/contract/conftest.py`, using `session.exec(select(...))` idiom). ✓
+- Volatile values (gender, history id, pronoun) asserted by type/shape only → Plan 2's contract delta does not break the suite on rebase. **Caveat:** these are shape-regression tests on live metadata, not a frozen golden snapshot (see execution map). ✓
+- Judgement calls (the `from main import app` line; `UserSessionWord` field names) flagged with explicit resolution instructions, including an HTTP-API fallback for session-word attachment. ✓

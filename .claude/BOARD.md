@@ -7,11 +7,19 @@ Lightweight task board for the horizontal execution round. One swimlane per lane
 
 **Coordination rules**
 - Cards respect the file-ownership manifest in `plans/2026-06-20-horizontal-execution-map.md`. No cross-lane file edits.
-- Merge order is strict: **Q → A → F → B**. A card in "Review" waits its merge turn.
-- Gate 0: Q's contract cards merge before A/F/B merge (they may *start* in parallel).
+- **Step 0 first (S0 below):** merge the planning branch (docs/board) to `main`, THEN cut every lane branch from the updated `main` — else lane worktrees won't contain their own plan docs.
+- Merge order is strict: **Q → A → F → B**, then the doc-sync card (DS).
+- L3 merges first to establish a baseline; L1/L2/L4 are NOT blocked from starting (they branch and run immediately).
+- `.claude/*` and `README.md` are edited ONLY by the final doc-sync card (DS), never by a lane.
 - When you pick up a card: set 🟨 + add your agent id. When done locally: 🟧 (awaiting merge). After merge: ✅.
 
 ---
+
+## S0 — Bootstrap (do before any lane branch is cut)
+
+| ID | Card | Status | Dep |
+|---|---|---|---|
+| S0 | Merge `plan-horizontal-execution` (docs/BOARD/BACKLOG only) → `main`; then cut all four lane branches from updated `main` | 🟦 Ready | — |
 
 ## Lane Q — QA / Testing  (branch `test-contract-freeze`, merge 1st)
 
@@ -33,7 +41,7 @@ Lightweight task board for the horizontal execution round. One swimlane per lane
 | A4 | Task 4: nullable `Word.aspect` + migration 0004 (M4/M5 groundwork) | 🟦 Ready | A3 |
 | A5 | Task 5: `Attempt` model + create-table migration 0005 (M3) | 🟦 Ready | A4 |
 | A6 | Task 6: cutover — copy data, drop old tables, rewrite call sites (M3) | 🟦 Ready | A5 |
-| A7 | Task 7: docs (CONTEXT/BACKLOG/README) | 🟦 Ready | A6 |
+| A7 | Task 7 (DESCOPED): leave a note for doc-sync — do NOT edit `.claude/*`/`README.md` (DS owns them) | 🟦 Ready | A6 |
 | A8 | **Merge to main** | ⏸ Blocked | A7, Q5 |
 
 ## Lane F — Frontend (branch `plan-6-fe-refactor`, merge 3rd)
@@ -60,6 +68,12 @@ Lightweight task board for the horizontal execution round. One swimlane per lane
 | B5 | Worker README documenting deferred backend wiring | 🟦 Ready | B4 |
 | B6 | Rebase on post-Plan-2 main | ⏸ Blocked | B2,B5, A8 |
 | B7 | **Merge to main** | ⏸ Blocked | B6 |
+
+## DS — Doc-sync consolidation (after ALL lanes merge)
+
+| ID | Card | Status | Dep |
+|---|---|---|---|
+| DS | Single editor of `.claude/CONTEXT.md` + `.claude/BACKLOG.md` + `README.md`: mark Attempt/virility/aspect live, Alembic migrations note, flip statuses, changelog | ⏸ Blocked | A8,F8,B7,Q5 |
 
 ---
 

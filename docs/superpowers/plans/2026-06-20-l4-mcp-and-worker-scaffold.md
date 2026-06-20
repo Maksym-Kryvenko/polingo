@@ -60,6 +60,13 @@ CONNECT_TIMEOUT_S = 5.0
 MAX_RETRIES = 1
 ```
 
+Create `mcp_server/pytest.ini` (REQUIRED — without `asyncio_mode` the `@pytest.mark.asyncio` tests silently pass without running):
+
+```ini
+[pytest]
+asyncio_mode = auto
+```
+
 - [ ] **Step 2: Write the failing backend-client test**
 
 Create `mcp_server/tests/__init__.py` (empty), then `mcp_server/tests/test_backend.py`:
@@ -126,7 +133,9 @@ class BackendClient:
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
             base_url=self._base_url,
-            timeout=httpx.Timeout(CONNECT_TIMEOUT_S),
+            # connect timeout is the one that matters for "backend down"; give reads
+            # more headroom since LLM-backed adds can be slow.
+            timeout=httpx.Timeout(30.0, connect=CONNECT_TIMEOUT_S),
             transport=self._transport,
         )
 
@@ -168,7 +177,7 @@ Expected: PASS (2 passed).
 - [ ] **Step 6: Commit**
 
 ```bash
-git add mcp_server/__init__.py mcp_server/requirements.txt mcp_server/config.py mcp_server/backend.py mcp_server/tests
+git add mcp_server/__init__.py mcp_server/requirements.txt mcp_server/config.py mcp_server/pytest.ini mcp_server/backend.py mcp_server/tests
 git commit -m "feat(mcp): backend HTTP client with structured-error passthrough"
 ```
 
@@ -405,6 +414,13 @@ def redis_url() -> str:
     return os.getenv("POLINGO_REDIS_URL", "redis://localhost:6379")
 ```
 
+Create `worker/pytest.ini` (REQUIRED for the async task tests, same reason as mcp_server):
+
+```ini
+[pytest]
+asyncio_mode = auto
+```
+
 - [ ] **Step 2: Write the failing state-machine test**
 
 Create `worker/tests/__init__.py` (empty), then `worker/tests/test_status.py`:
@@ -559,19 +575,23 @@ async def generate_forms(
     return {"word_id": word_id, "status": status.value}
 
 
+from arq import func
+from arq.connections import RedisSettings
+
+
 class WorkerSettings:
-    """ARQ entrypoint. `arq worker.tasks.WorkerSettings` runs this."""
-    functions = [generate_forms]
-    max_tries = MAX_ATTEMPTS
+    """ARQ entrypoint. `arq worker.tasks.WorkerSettings` runs this.
 
-    @staticmethod
-    def redis_settings():
-        from arq.connections import RedisSettings
-        return RedisSettings.from_dsn(redis_url())
-
-    # Backoff: ARQ retries with its own delay; BACKOFF_BASE_S documents intent.
-    retry_delay = BACKOFF_BASE_S
+    NOTE (corrected per ARQ API): `redis_settings` is a plain ATTRIBUTE holding a
+    RedisSettings instance — ARQ does NOT call it. `max_tries` is NOT a
+    WorkerSettings field; it is set per-function via `func(...)`. There is no
+    `retry_delay` on WorkerSettings — backoff is done by raising
+    `arq.worker.Retry(defer=...)` inside the task (wired in the integration plan)."""
+    functions = [func(generate_forms, name="generate_forms", max_tries=MAX_ATTEMPTS)]
+    redis_settings = RedisSettings.from_dsn(redis_url())
 ```
+
+> **Backoff (deferred to integration):** ARQ has no declarative backoff. When `generate_fn` is wired to the real backend, the `except` branch should re-raise `arq.worker.Retry(defer=BACKOFF_BASE_S * attempt)` instead of a bare `raise`, so ARQ requeues with increasing delay up to `max_tries`. The scaffold keeps a bare `raise` (the unit test asserts the state-machine result, not ARQ's retry loop). `BACKOFF_BASE_S` documents the intended delay.
 
 - [ ] **Step 9: Run the task tests**
 

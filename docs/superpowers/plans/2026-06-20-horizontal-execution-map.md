@@ -30,34 +30,48 @@ A lane MUST only modify files in its own row. Overlap = conflict; route the chan
 | `backend-app/requirements.txt` | **L1** (L4 adds worker deps via a *separate* `mcp_server/requirements.txt` / `worker/requirements.txt`, not this file) |
 | `frontend-app/src/**` | **L2** |
 | `frontend-app/package.json`, `vite.config.js` | **L2** |
-| `backend-app/tests/contract/**` | **L3** |
-| `backend-app/tests/conftest.py` | **L3** *(append-only: add fixtures, never edit L1-owned assertions)* — see conflict note below |
+| `backend-app/tests/contract/**` (incl. its own `conftest.py`) | **L3** |
 | `mcp_server/**` (new top-level dir) | **L4** |
 | `worker/**` (new top-level dir) | **L4** |
-| `.claude/BACKLOG.md`, `.claude/CONTEXT.md` | whoever merges last per their plan's doc task (L1 owns the Plan 2 doc updates) |
+| `.claude/BACKLOG.md`, `.claude/CONTEXT.md`, `README.md` | **doc-sync consolidation card (after all lanes merge)** — NOT any lane. See note below. |
+| `docker-compose.yml` | **deferred** — redis+worker services land in the later Plan 3 wiring, out of scope this round. No lane edits it. |
 
-**conftest conflict note:** L3 needs a non-autouse `seeded_client` fixture (the current `fresh_db` is autouse + unseeded). To avoid editing the L1-touched `conftest.py`, **L3 puts its fixtures in `backend-app/tests/contract/conftest.py`** (pytest merges nested conftests). No edit to the root conftest. This is enforced in the L3 plan.
+**conftest conflict note:** L3 needs a seeded client (the root `fresh_db` is autouse + unseeded). To avoid editing the L1-touched root `conftest.py`, **L3 puts its fixtures in `backend-app/tests/contract/conftest.py`** (pytest merges nested conftests). No edit to the root conftest.
+
+**doc-sync collision note (critic finding):** Plan 2's original Task 7 edited `.claude/CONTEXT.md` / `.claude/BACKLOG.md` / `README.md`. Those files are ALSO touched on the planning branch (this round's BACKLOG/BOARD/CONTEXT edits). To avoid a guaranteed three-way conflict, **doc-sync is removed from every lane and done once as a final consolidation card after all four lanes merge.** Plan 2's Task 7 is descoped to "leave a note for doc-sync" rather than editing the docs itself.
+
+**seed consistency note (critic finding):** L3's contract tests run `seed_words` against whatever schema is current. After L1 merges, `app/seed.py` (L1-owned) must keep its data consistent with the new 5-gender enums, or seeding fails at collection. L1 owns this; L3 transitively depends on it post-rebase.
 
 ---
+
+## Step 0 — bootstrap the planning branch (do this FIRST)
+
+**Critical bootstrapping fix:** these plan docs, `BOARD.md`, and the updated `BACKLOG.md` currently live only on branch `plan-horizontal-execution`. Lane branches are cut from `main`. If you cut them before merging this branch, **the lane worktrees won't contain their own plan docs.** So:
+
+1. Merge `plan-horizontal-execution` → `main` (docs/board/backlog only, no code).
+2. Only THEN cut `test-contract-freeze`, `plan-2-schema`, `plan-6-fe-refactor`, `plan-5-mcp` from the updated `main`.
 
 ## Dependency DAG
 
 ```
-            ┌─ Gate 0: L3 contract-freeze tests (golden current HTTP) ─┐
-            │                merge to main FIRST                        │
-            └───────────────────────────┬──────────────────────────────┘
-                                         │ safety net live
-        ┌────────────────┬───────────────┴────────────┬─────────────────┐
-        ▼                ▼                              ▼                 ▼
-   L1 Plan 2        L2 FE refactor                L4 MCP server     L4 worker scaffold
-   (critical)       (client+state)                (HTTP client)     (new dir, deferred)
-        │                │                              │                 │
-        └── merge 2nd ───┤ rebase on Plan2 ─ merge 3rd ─┤ rebase ─ merge 4th
+   Step 0: merge planning branch (docs) → main ── then cut all lane branches
+        │
+   L3 contract tests ── merge 1st (baseline) ──┐
+        │                                       │ (others rebase onto it)
+        ├────────────────┬─────────────────────┼─────────────────┐
+        ▼                ▼                       ▼                 ▼
+   L1 Plan 2        L2 FE refactor         L4 MCP server     L4 worker scaffold
+   (critical)       (client+state)         (HTTP client)     (new dir, deferred)
+        │                │                       │                 │
+        └── merge 2nd ───┤ rebase on Plan2 ─ 3rd ┤ rebase ─ merge 4th
                          ▼
                Plan 4 (later) ── unblocks ──> Plan 6 part 2 (per-Format UI)
+   Final: doc-sync consolidation card (CONTEXT/BACKLOG/README) after all merge
 ```
 
-**Gate 0 is a hard gate.** L1/L2/L4 may *start* in parallel immediately (they branch from current `main`), but L3's contract tests should land first so any accidental contract drift in L1/L2 is caught on rebase.
+**On "Gate 0" (corrected — critic finding):** L1/L2/L4 are **not blocked** from starting; they branch and run immediately. L3 merely **merges first** to establish a test baseline that the others rebase onto. This is a merge-ordering convention, not a hard execution gate.
+
+**On the contract "safety net" (corrected — critic finding):** L3's tests build their schema from live model metadata, so after L1 merges they exercise the *new* code, not a frozen snapshot. They are therefore **shape-level regression coverage** (catch accidental key/status changes), **not** a frozen golden-value contract — by design they tolerate the gender/pronoun/id values Plan 2 changes. Do not over-claim them as proof the API "cannot change." A true value-freeze (committed golden response bodies captured against `main` pre-merge) is a possible hardening, deliberately out of scope this round.
 
 ---
 
