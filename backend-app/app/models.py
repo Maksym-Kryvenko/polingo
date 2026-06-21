@@ -212,6 +212,27 @@ class EndingsPracticeRecord(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class AttemptKind(str, Enum):
+    practice = "practice"   # translation / writing / pronunciation
+    endings = "endings"     # grammar endings practice
+
+
+class Attempt(SQLModel, table=True):
+    """Single source of truth for one graded answer (M3). Supersedes the
+    disjoint PracticeRecord + EndingsPracticeRecord tables."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    word_id: int = Field(foreign_key="word.id", index=True)
+    kind: AttemptKind = Field(index=True)
+    language_set: Optional[LanguageSet] = Field(default=None)
+    direction: Optional[PracticeDirection] = Field(default=None)
+    part_of_speech: Optional[PartOfSpeech] = Field(default=None)
+    was_correct: bool
+    user_answer: Optional[str] = Field(default=None)
+    correct_answer: Optional[str] = Field(default=None)
+    practice_date: date = Field(default_factory=date.today, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 # ── Admin ────────────────────────────────────────────────────
 
 

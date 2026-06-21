@@ -97,3 +97,24 @@ def test_word_has_aspect_column_after_upgrade(tmp_path, monkeypatch):
     cols = {r[1] for r in con.execute("PRAGMA table_info(word)").fetchall()}
     con.close()
     assert "aspect" in cols
+
+
+def test_attempt_table_created_at_0005(tmp_path, monkeypatch):
+    db = tmp_path / "att.db"
+    monkeypatch.setenv("POLINGO_DATABASE_URL", f"sqlite:///{db}")
+    cfg = _alembic_cfg(str(db))
+    command.upgrade(cfg, "0005_attempt_table")
+
+    con = sqlite3.connect(db)
+    names = {r[0] for r in con.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall()}
+    cols = {r[1] for r in con.execute("PRAGMA table_info(attempt)").fetchall()}
+    con.close()
+
+    assert "attempt" in names
+    # old tables still present at this revision (dropped in 0006)
+    assert "practicerecord" in names and "endingspracticerecord" in names
+    assert {"word_id", "kind", "language_set", "direction", "part_of_speech",
+            "was_correct", "user_answer", "correct_answer", "practice_date",
+            "created_at"} <= cols
