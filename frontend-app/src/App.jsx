@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import * as api from "./api";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? `http://${window.location.hostname}:8000/api`;
-
 function shuffleArray(array) {
   const shuffled = [...array];
   for (let i = shuffled.length - 1; i > 0; i--) {
@@ -30,7 +28,6 @@ function renderSpellingDiff(userAnswer, correctAnswer) {
 
 const LANGUAGE_LABELS = { english: "English", ukrainian: "Ukrainian" };
 const FIELD_LABELS = { polish: "Polish entry", english: "English entry", ukrainian: "Ukrainian entry", resolved: "LLM match" };
-const buildUrl = (path) => `${API_BASE_URL}/${path}`;
 const STATUS_HIDE_DELAY = 5000;
 
 function getInitialPage() {
@@ -203,9 +200,8 @@ function App() {
 
   const fetchConnectedDevices = async () => {
     try {
-      const r = await fetch(buildUrl("admin/devices"));
-      if (r.ok) {
-        const data = await r.json();
+      const data = await api.admin.getDevices();
+      if (data) {
         setConnectedDevices(data.devices);
         setDeviceStats({ total: data.total_count, active: data.active_count });
       }
@@ -214,9 +210,8 @@ function App() {
 
   const fetchAdminSettings = async () => {
     try {
-      const r = await fetch(buildUrl("admin/settings"));
-      if (r.ok) {
-        const data = await r.json();
+      const data = await api.admin.getSettings();
+      if (data) {
         const otf = data.find((s) => s.key === "generate_on_the_fly");
         setGenerateOnTheFly(otf?.value === "true");
         const tts = data.find((s) => s.key === "tts_source");
@@ -227,9 +222,8 @@ function App() {
 
   const fetchTtsSetting = async () => {
     try {
-      const r = await fetch(buildUrl("admin/settings/tts_source"));
-      if (r.ok) {
-        const data = await r.json();
+      const data = await api.admin.getSetting("tts_source");
+      if (data) {
         setTtsSource(data.value ?? "browser");
       }
     } catch (e) { /* setting may not exist yet, keep default */ }
@@ -238,10 +232,7 @@ function App() {
   const toggleOnTheFly = async () => {
     const newVal = !generateOnTheFly;
     try {
-      await fetch(buildUrl("admin/settings/generate_on_the_fly"), {
-        method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value: newVal ? "true" : "false" }),
-      });
+      await api.admin.updateSetting("generate_on_the_fly", newVal ? "true" : "false");
       setGenerateOnTheFly(newVal);
     } catch (e) { console.error(e); }
   };
@@ -249,10 +240,7 @@ function App() {
   const toggleTtsSource = async () => {
     const newVal = ttsSource === "browser" ? "server" : "browser";
     try {
-      await fetch(buildUrl("admin/settings/tts_source"), {
-        method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value: newVal }),
-      });
+      await api.admin.updateSetting("tts_source", newVal);
       setTtsSource(newVal);
     } catch (e) { console.error(e); }
   };
@@ -285,19 +273,15 @@ function App() {
 
   const fetchSentences = async () => {
     try {
-      const r = await fetch(buildUrl("admin/sentences"));
-      if (r.ok) setSentences(await r.json());
+      const data = await api.admin.getSentences();
+      if (data) setSentences(data);
     } catch (e) { console.error(e); }
   };
 
   const handleSaveSentence = async (id) => {
     try {
-      const r = await fetch(buildUrl(`admin/sentences/${id}`), {
-        method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editingSentenceValues),
-      });
-      if (r.ok) {
-        const updated = await r.json();
+      const updated = await api.admin.saveSentence(id, editingSentenceValues);
+      if (updated) {
         setSentences((prev) => prev.map((s) => s.id === id ? updated : s));
         setEditingSentenceId(null);
       }
@@ -307,9 +291,8 @@ function App() {
   const handleFixSentence = async (id) => {
     setSentenceFixingId(id);
     try {
-      const r = await fetch(buildUrl(`admin/sentences/${id}/fix`), { method: "POST" });
-      if (r.ok) {
-        const updated = await r.json();
+      const updated = await api.admin.fixSentence(id);
+      if (updated) {
         setSentences((prev) => prev.map((s) => s.id === id ? updated : s));
       }
     } catch (e) { console.error(e); }
@@ -318,8 +301,8 @@ function App() {
 
   const handleDeleteSentence = async (id) => {
     try {
-      const r = await fetch(buildUrl(`admin/sentences/${id}`), { method: "DELETE" });
-      if (r.ok) setSentences((prev) => prev.filter((s) => s.id !== id));
+      const d = await api.admin.deleteSentence(id);
+      if (d) setSentences((prev) => prev.filter((s) => s.id !== id));
     } catch (e) { console.error(e); }
   };
 
@@ -633,10 +616,10 @@ function App() {
 
   // ── Admin handlers ────────────────────────────────────────
   const handleDeleteDevice = async (deviceId) => {
-    try { await fetch(buildUrl(`admin/devices/${deviceId}`), { method: "DELETE" }); fetchConnectedDevices(); } catch (e) { console.error(e); }
+    try { await api.admin.deleteDevice(deviceId); fetchConnectedDevices(); } catch (e) { console.error(e); }
   };
   const handleClearAllDevices = async () => {
-    try { await fetch(buildUrl("admin/devices"), { method: "DELETE" }); fetchConnectedDevices(); } catch (e) { console.error(e); }
+    try { await api.admin.clearDevices(); fetchConnectedDevices(); } catch (e) { console.error(e); }
   };
 
   // ── Render ────────────────────────────────────────────────
