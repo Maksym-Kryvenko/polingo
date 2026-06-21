@@ -1,6 +1,9 @@
 import logging
-import sqlite3
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config as AlembicConfig
+from sqlalchemy import inspect
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -11,6 +14,7 @@ from app.seed import seed_words
 logger = logging.getLogger("polingo.database")
 
 _MEMORY_URLS = {"sqlite://", "sqlite:///:memory:"}
+_ALEMBIC_INI = Path(__file__).resolve().parent.parent / "alembic.ini"
 
 
 def make_engine(url: str):
@@ -32,36 +36,37 @@ def make_engine(url: str):
 engine = make_engine(config.database_url())
 
 
-def _migrate_add_columns(engine) -> None:
-    """Add new nullable columns to existing tables if missing. Swallows ONLY
-    the 'duplicate column' case; every other failure is logged and re-raised
-    so a broken migration cannot start the app silently (B3)."""
-    db_path = engine.url.database
-    if db_path in (None, ":memory:"):
-        return  # in-memory DB: create_all already built the current schema
-    conn = sqlite3.connect(db_path)
+def _alembic_config() -> AlembicConfig:
+    cfg = AlembicConfig(str(_ALEMBIC_INI))
+    cfg.set_main_option("script_location", str(_ALEMBIC_INI.parent / "migrations"))
+    cfg.set_main_option("sqlalchemy.url", config.database_url())
+    return cfg
+
+
+def run_migrations() -> None:
+    """Bring the schema to head. In-memory DBs (tests) are built directly from
+    model metadata — Alembic is exercised against a file DB in test_migrations.
+    Pre-Alembic file DBs (built by the old create_all path) are stamped at the
+    baseline before upgrading so their existing data is preserved."""
+    url = config.database_url()
+    if url in _MEMORY_URLS:
+        SQLModel.metadata.create_all(engine)
+        return
+    cfg = _alembic_config()
+    # Inspect the same physical DB Alembic will target (build a throwaway engine
+    # from the resolved URL rather than reusing the module engine).
+    insp_engine = create_engine(url)
     try:
-        cursor = conn.cursor()
-        for table, column in [
-            ("practicerecord", "user_answer"),
-            ("practicerecord", "correct_answer"),
-            ("endingspracticerecord", "user_answer"),
-            ("endingspracticerecord", "correct_answer"),
-        ]:
-            try:
-                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
-            except sqlite3.OperationalError as exc:
-                if "duplicate column name" not in str(exc).lower():
-                    logger.error("Migration failed on %s.%s: %s", table, column, exc)
-                    raise
-        conn.commit()
+        tables = set(inspect(insp_engine).get_table_names())
     finally:
-        conn.close()
+        insp_engine.dispose()
+    if "alembic_version" not in tables and "word" in tables:
+        command.stamp(cfg, "0001_baseline")
+    command.upgrade(cfg, "head")
 
 
 def init_db() -> None:
-    SQLModel.metadata.create_all(engine)
-    _migrate_add_columns(engine)
+    run_migrations()
     with Session(engine) as session:
         has_words = session.exec(select(Word)).first()
         if not has_words:
@@ -70,7 +75,6 @@ def init_db() -> None:
         if not has_session:
             session.add(UserSession())
             session.commit()
-        # Ensure default app settings
         if not session.get(AppSetting, "generate_on_the_fly"):
             session.add(AppSetting(key="generate_on_the_fly", value="false"))
             session.commit()
