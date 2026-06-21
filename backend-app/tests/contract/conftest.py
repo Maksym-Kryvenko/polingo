@@ -8,6 +8,31 @@ from app.models import AppSetting, UserSession, UserSessionWord, Word
 from app.seed import seed_words
 
 
+@pytest.fixture(autouse=True)
+def fake_llm_handlers(monkeypatch):
+    """The root conftest's autouse ``fake_llm`` patches ``app.llm.*``, but the
+    API handlers bind those callables at import time via ``from app.llm import
+    ...`` — so the handler-module name is what actually runs. Re-patch the
+    handler namespaces here (additive; nested-conftest only) so LLM-backed
+    endpoints stay deterministic/offline in the contract suite, matching the
+    existing Plan-1 grading test's approach.
+    """
+    monkeypatch.setattr(
+        "app.api.practice.validate_translation_via_llm",
+        lambda **kw: {"is_correct": False, "normalized_answer": "", "rationale": "fake"},
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.api.words.resolve_word_via_llm",
+        lambda text: {
+            "detected_language": "polish", "corrected_input": text,
+            "polish": text, "english": text, "ukrainian": text,
+            "part_of_speech": "inne", "gender": None,
+        },
+        raising=False,
+    )
+
+
 @pytest.fixture
 def seeded_client():
     """A TestClient backed by a freshly-seeded in-memory DB.
