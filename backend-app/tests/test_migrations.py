@@ -85,3 +85,15 @@ def test_pronoun_relabel_oni_one_to_oni(tmp_path, monkeypatch):
     con.close()
     assert past == [("oni",)]
     assert present == {"oni", "one"}
+
+
+def test_word_has_aspect_column_after_upgrade(tmp_path, monkeypatch):
+    db = tmp_path / "aspect.db"
+    monkeypatch.setenv("POLINGO_DATABASE_URL", f"sqlite:///{db}")
+    cfg = _alembic_cfg(str(db))
+    command.upgrade(cfg, "0004_word_aspect")
+
+    con = sqlite3.connect(db)
+    cols = {r[1] for r in con.execute("PRAGMA table_info(word)").fetchall()}
+    con.close()
+    assert "aspect" in cols

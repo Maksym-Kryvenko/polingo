@@ -34,7 +34,8 @@ def resolve_word_via_llm(text: str) -> Dict[str, Any]:
         "part_of_speech (one of: rzeczownik, czasownik, przymiotnik, zaimek, przysłówek, inne), "
         "gender (for rzeczownik only: one of męskoosobowy [masc. personal], "
         "męskozywotny [masc. animate], męskorzeczowy [masc. inanimate], żeński, "
-        "or nijaki; null otherwise). "
+        "or nijaki; null otherwise), "
+        "aspect (for czasownik only: dokonany or niedokonany; null otherwise). "
         "Use lowercase for translations unless proper noun."
     )
     response = client.responses.create(
@@ -53,6 +54,7 @@ def resolve_word_via_llm(text: str) -> Dict[str, Any]:
         "ukrainian": str(payload.get("ukrainian", "")),
         "part_of_speech": str(payload.get("part_of_speech", "inne")),
         "gender": payload.get("gender"),
+        "aspect": payload.get("aspect"),
     }
 
 

@@ -259,6 +259,7 @@ def check_word(payload: WordCheckRequest) -> WordCheckResponse:
             ukrainian=resolved["ukrainian"],
             part_of_speech=pos_enum,
             gender=resolved.get("gender"),
+            aspect=resolved.get("aspect"),
         )
         session.add(new_word)
         session.commit()
@@ -352,6 +353,7 @@ def check_single_word(
         ukrainian=resolved["ukrainian"],
         part_of_speech=pos_enum,
         gender=resolved.get("gender"),
+        aspect=resolved.get("aspect"),
     )
     session.add(new_word)
     session.commit()
@@ -474,6 +476,7 @@ async def check_words_bulk(payload: WordCheckBulkRequest) -> WordCheckBulkRespon
                         polish=resolved["polish"], english=resolved["english"],
                         ukrainian=resolved["ukrainian"], part_of_speech=pos_enum,
                         gender=resolved.get("gender"),
+                        aspect=resolved.get("aspect"),
                     )
                     session.add(new_word)
                     session.commit()

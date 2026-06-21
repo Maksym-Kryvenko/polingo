@@ -86,6 +86,11 @@ class VerbTense(str, Enum):
     przyszly = "przyszły"
 
 
+class Aspect(str, Enum):
+    dokonany = "dokonany"        # perfective
+    niedokonany = "niedokonany"  # imperfective
+
+
 class Pronoun(str, Enum):
     ja = "ja"
     ty = "ty"
@@ -106,6 +111,7 @@ class Word(SQLModel, table=True):
     ukrainian: str
     part_of_speech: PartOfSpeech = Field(default=PartOfSpeech.inne, index=True)
     gender: Optional[str] = Field(default=None)  # for nouns: męski/żeński/nijaki
+    aspect: Optional[Aspect] = Field(default=None)  # for czasownik only (M4/M5)
 
 
 class WordOption(SQLModel, table=True):

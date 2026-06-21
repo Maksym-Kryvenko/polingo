@@ -31,3 +31,18 @@ def test_pronoun_splits_oni_one():
     assert "oni" in values
     assert "one" in values
     assert "oni/one" not in values
+
+
+from app.models import Aspect, Word
+
+
+def test_aspect_enum_values():
+    assert {a.value for a in Aspect} == {"dokonany", "niedokonany"}
+
+
+def test_word_accepts_optional_aspect():
+    w = Word(polish="zrobić", english="to do", ukrainian="зробити",
+             part_of_speech="czasownik", aspect=Aspect.dokonany)
+    assert w.aspect == Aspect.dokonany
+    w2 = Word(polish="kot", english="cat", ukrainian="кіт", part_of_speech="rzeczownik")
+    assert w2.aspect is None
