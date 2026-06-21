@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
+import * as api from "./api";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? `http://${window.location.hostname}:8000/api`;
 
@@ -138,17 +139,16 @@ function App() {
   const fetchStats = async () => {
     setLoadingStats(true);
     try {
-      const r = await fetch(buildUrl("stats"));
-      if (r.ok) setStats(await r.json());
+      const data = await api.stats.getStats();
+      if (data) setStats(data);
     } catch (e) { console.error(e); }
     finally { setLoadingStats(false); }
   };
 
   const fetchSession = async () => {
     try {
-      const r = await fetch(buildUrl("session"));
-      if (r.ok) {
-        const data = await r.json();
+      const data = await api.session.getSession();
+      if (data) {
         setLanguageSet(data.language_set);
         setWordPool(data.words ?? []);
       }
@@ -157,9 +157,8 @@ function App() {
 
   const fetchAllWords = async () => {
     try {
-      const r = await fetch(buildUrl("session/words/all"));
-      if (r.ok) {
-        const data = await r.json();
+      const data = await api.session.getAllWords();
+      if (data) {
         setAllWords(data.words ?? []);
       }
     } catch (e) { console.error(e); }
@@ -328,9 +327,8 @@ function App() {
   const fetchHistory = async () => {
     setHistoryLoading(true);
     try {
-      const r = await fetch(buildUrl(`stats/history?limit=100&language_set=${languageSet}`));
-      if (r.ok) {
-        const data = await r.json();
+      const data = await api.stats.getHistory({ limit: 100, language_set: languageSet });
+      if (data) {
         setHistoryRecords(data.records ?? []);
         setHistoryTotal(data.total ?? 0);
       }
@@ -343,20 +341,15 @@ function App() {
     setExplainText("");
     setExplainLoading(true);
     try {
-      const r = await fetch(buildUrl("stats/explain"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          word_polish: record.word_polish,
-          word_translation: record.word_translation,
-          section: record.section,
-          user_answer: record.user_answer,
-          correct_answer: record.correct_answer,
-          was_correct: record.was_correct,
-        }),
+      const data = await api.stats.explain({
+        word_polish: record.word_polish,
+        word_translation: record.word_translation,
+        section: record.section,
+        user_answer: record.user_answer,
+        correct_answer: record.correct_answer,
+        was_correct: record.was_correct,
       });
-      if (r.ok) {
-        const data = await r.json();
+      if (data) {
         setExplainText(data.explanation);
       } else {
         setExplainText("Could not get explanation.");
@@ -422,7 +415,7 @@ function App() {
   // ── Practice handlers ─────────────────────────────────────
   const handleLanguageChange = async (value) => {
     setLanguageSet(value);
-    try { await fetch(buildUrl("session/language"), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ language_set: value }) }); } catch (e) { console.error(e); }
+    try { await api.session.setLanguage(value); } catch (e) { console.error(e); }
   };
 
   const handleLoadInitial = async () => {
