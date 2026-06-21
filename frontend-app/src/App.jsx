@@ -195,10 +195,12 @@ function App() {
 
   const fetchChooseQuestion = async () => {
     try {
-      const excludeParam = chooseQuestion?.word_id ? `&exclude_word_id=${chooseQuestion.word_id}` : "";
-      const r = await fetch(buildUrl(`practice/choose-translation/question?language_set=${languageSet}&direction=${practiceDirection}${excludeParam}`));
-      if (r.ok) setChooseQuestion(await r.json());
-      else setChooseQuestion(null);
+      const data = await api.practice.chooseQuestion({
+        language_set: languageSet,
+        direction: practiceDirection,
+        exclude_word_id: chooseQuestion?.word_id || undefined,
+      });
+      setChooseQuestion(data ?? null);
     } catch (e) { console.error(e); setChooseQuestion(null); }
   };
 
@@ -266,7 +268,7 @@ function App() {
       try {
         let url = ttsCache.current[text];
         if (!url) {
-          const r = await fetch(buildUrl(`practice/tts?text=${encodeURIComponent(text)}`));
+          const r = await fetch(api.practice.ttsUrl(text)); // raw: blob
           if (!r.ok) return;
           const blob = await r.blob();
           url = URL.createObjectURL(blob);
@@ -470,9 +472,8 @@ function App() {
     if (!answer.trim()) { setPracticeStatus({ type: "error", message: "Try answering first." }); return; }
     const dir = practiceMode === "writing" ? "writing" : "translation";
     try {
-      const r = await fetch(buildUrl("practice/validate"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word_id: currentWriteTranslateWord.id, language_set: languageSet, direction: dir, answer }) });
-      if (!r.ok) throw new Error();
-      const p = await r.json();
+      const p = await api.practice.validate({ word_id: currentWriteTranslateWord.id, language_set: languageSet, direction: dir, answer });
+      if (!p) throw new Error();
       setPracticeStatus({ type: p.was_correct ? "success" : "error", message: p.was_correct ? "Correct!" : `The correct answer is "${p.correct_answer}".` });
       setStats(p.stats);
       setLastAnswer({ userAnswer: answer, correctAnswer: p.correct_answer, alternatives: p.alternatives || [], wasCorrect: p.was_correct, direction: dir, skipped: false });
@@ -487,9 +488,8 @@ function App() {
     if (practiceStatusTimeoutRef.current) clearTimeout(practiceStatusTimeoutRef.current);
     const dir = practiceMode === "writing" ? "writing" : "translation";
     try {
-      const r = await fetch(buildUrl("practice/skip"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word_id: currentWriteTranslateWord.id, language_set: languageSet, direction: dir, answer: "" }) });
-      if (!r.ok) throw new Error();
-      const p = await r.json();
+      const p = await api.practice.skip({ word_id: currentWriteTranslateWord.id, language_set: languageSet, direction: dir, answer: "" });
+      if (!p) throw new Error();
       setLastAnswer({ userAnswer: "", correctAnswer: p.correct_answer, alternatives: p.alternatives || [], wasCorrect: false, direction: dir, skipped: true });
       setPracticeStatus({ type: "info", message: "Skipped. The answer was:" });
       setStats(p.stats);
@@ -503,9 +503,8 @@ function App() {
     if (!chooseQuestion) return;
     if (practiceStatusTimeoutRef.current) clearTimeout(practiceStatusTimeoutRef.current);
     try {
-      const r = await fetch(buildUrl("practice/choose-translation/validate"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word_id: chooseQuestion.word_id, language_set: languageSet, direction: practiceDirection, answer: selected }) });
-      if (!r.ok) throw new Error();
-      const p = await r.json();
+      const p = await api.practice.chooseValidate({ word_id: chooseQuestion.word_id, language_set: languageSet, direction: practiceDirection, answer: selected });
+      if (!p) throw new Error();
       setPracticeStatus({ type: p.was_correct ? "success" : "error", message: p.was_correct ? "Correct!" : `Incorrect. The answer was "${p.correct_answer}".` });
       setStats(p.stats);
       fetchChooseQuestion();
@@ -517,7 +516,7 @@ function App() {
     if (!chooseQuestion) return;
     if (practiceStatusTimeoutRef.current) clearTimeout(practiceStatusTimeoutRef.current);
     try {
-      await fetch(buildUrl("practice/choose-translation/validate"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word_id: chooseQuestion.word_id, language_set: languageSet, direction: practiceDirection, answer: "" }) });
+      await api.practice.chooseValidate({ word_id: chooseQuestion.word_id, language_set: languageSet, direction: practiceDirection, answer: "" });
       setPracticeStatus({ type: "info", message: `Skipped. The answer was "${chooseQuestion.correct_answer}".` });
       fetchChooseQuestion();
       practiceStatusTimeoutRef.current = setTimeout(() => setPracticeStatus(null), STATUS_HIDE_DELAY);
@@ -549,9 +548,8 @@ function App() {
     fd.append("word_id", currentPronunciationWord.id);
     fd.append("language_set", languageSet);
     try {
-      const r = await fetch(buildUrl("practice/pronunciation"), { method: "POST", body: fd });
-      if (!r.ok) throw new Error();
-      const p = await r.json();
+      const p = await api.practice.submitPronunciation(fd);
+      if (!p) throw new Error();
       const pct = Math.round(p.similarity_score * 100);
       setPronunciationStatus({ type: p.was_correct ? "success" : "error", message: p.was_correct ? `Correct! "${p.transcribed_text}" (${pct}% match)` : `You said "${p.transcribed_text}". Expected "${p.expected_word}". ${p.feedback}` });
       setStats(p.stats);
@@ -563,8 +561,8 @@ function App() {
     if (!currentPronunciationWord) return;
     if (pronunciationStatusTimeoutRef.current) clearTimeout(pronunciationStatusTimeoutRef.current);
     try {
-      const r = await fetch(buildUrl("practice/skip"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word_id: currentPronunciationWord.id, language_set: languageSet, direction: "pronunciation", answer: "" }) });
-      if (r.ok) { const p = await r.json(); setStats(p.stats); }
+      const p = await api.practice.skip({ word_id: currentPronunciationWord.id, language_set: languageSet, direction: "pronunciation", answer: "" });
+      if (p) { setStats(p.stats); }
       setPronunciationStatus({ type: "info", message: `Skipped. The word was "${currentPronunciationWord.polish}".` });
       pronunciationStatusTimeoutRef.current = setTimeout(() => setPronunciationStatus(null), STATUS_HIDE_DELAY);
     } catch (e) { console.error(e); }
