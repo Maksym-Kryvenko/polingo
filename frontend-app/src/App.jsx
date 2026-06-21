@@ -419,12 +419,10 @@ function App() {
 
   const handleLoadInitial = async () => {
     try {
-      const r = await fetch(buildUrl("words/initial?count=10"));
-      if (!r.ok) throw new Error();
-      const payload = await r.json();
-      const saved = await fetch(buildUrl("session/words/bulk"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word_ids: payload.map((w) => w.id) }) });
-      if (!saved.ok) throw new Error();
-      const ss = await saved.json();
+      const payload = await api.words.getInitial(10);
+      if (!payload) throw new Error();
+      const ss = await api.session.addWordsBulk(payload.map((w) => w.id));
+      if (!ss) throw new Error();
       setWordPool(ss.words ?? []);
       setManualStatus({ type: "success", message: "Loaded and saved the first 10 words." });
     } catch (e) { console.error(e); setManualStatus({ type: "error", message: "Could not load starter set." }); }
@@ -436,9 +434,8 @@ function App() {
     setAddingWords(true);
     try {
       if (trimmed.includes(",")) {
-        const r = await fetch(buildUrl("words/check/bulk"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: trimmed }) });
-        if (!r.ok) throw new Error();
-        const p = await r.json();
+        const p = await api.words.checkWordsBulk(trimmed);
+        if (!p) throw new Error();
         await fetchSession();
         const msgs = [];
         if (p.added_count > 0) msgs.push(`Added ${p.added_count} word(s)`);
@@ -446,13 +443,11 @@ function App() {
         if (p.failed_count > 0) msgs.push(`${p.failed_count} could not be found`);
         setManualStatus({ type: p.added_count > 0 ? "success" : (p.duplicate_count > 0 ? "info" : "error"), message: msgs.join(". ") + "." });
       } else {
-        const r = await fetch(buildUrl("words/check"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: trimmed }) });
-        if (!r.ok) throw new Error();
-        const p = await r.json();
+        const p = await api.words.checkWord(trimmed);
+        if (!p) throw new Error();
         if (!p.found || !p.word) { setManualStatus({ type: "error", message: "Word not found. Check spelling or try a different form." }); return; }
-        const saved = await fetch(buildUrl("session/words"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word_id: p.word.id }) });
-        if (!saved.ok) throw new Error();
-        const ss = await saved.json();
+        const ss = await api.session.addWord(p.word.id);
+        if (!ss) throw new Error();
         setWordPool(ss.words ?? []);
         const src = FIELD_LABELS[p.matched_field] ?? "entry";
         const extra = p.created ? "Added via GPT." : "";
@@ -607,16 +602,16 @@ function App() {
   // ── Manage handlers ───────────────────────────────────────
   const handleToggleWord = async (wordId, enabled) => {
     try {
-      const r = await fetch(buildUrl("session/words/toggle"), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word_id: wordId, enabled }) });
-      if (r.ok) { const d = await r.json(); setAllWords(d.words ?? []); await fetchSession(); }
+      const d = await api.session.toggleWord(wordId, enabled);
+      if (d) { setAllWords(d.words ?? []); await fetchSession(); }
     } catch (e) { console.error(e); }
   };
 
   const handleDeleteWord = async (wordId) => {
     if (!window.confirm("Permanently delete this word?")) return;
     try {
-      const r = await fetch(buildUrl(`session/words/${wordId}`), { method: "DELETE" });
-      if (r.ok) { setAllWords((prev) => prev.filter((w) => w.id !== wordId)); await fetchSession(); }
+      const d = await api.session.deleteWord(wordId);
+      if (d) { setAllWords((prev) => prev.filter((w) => w.id !== wordId)); await fetchSession(); }
     } catch (e) { console.error(e); }
   };
 
@@ -625,9 +620,8 @@ function App() {
   const handleSaveEdit = async (wordId) => {
     setEditSaving(true);
     try {
-      const r = await fetch(buildUrl(`words/${wordId}`), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editingValues) });
-      if (r.ok) {
-        const updated = await r.json();
+      const updated = await api.words.updateWord(wordId, editingValues);
+      if (updated) {
         setAllWords((prev) => prev.map((w) => (w.id === wordId ? { ...w, ...updated } : w)));
         setEditingWordId(null);
         setEditingValues({ polish: "", english: "", ukrainian: "" });
