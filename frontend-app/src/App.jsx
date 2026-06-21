@@ -166,30 +166,27 @@ function App() {
 
   const fetchEndingsConfig = async () => {
     try {
-      const r = await fetch(buildUrl("endings/config"));
-      if (r.ok) setEndingsConfig(await r.json());
+      const data = await api.endings.getConfig();
+      if (data) setEndingsConfig(data);
     } catch (e) { console.error(e); }
   };
 
   const fetchEndingsQuestion = async () => {
     try {
-      const params = new URLSearchParams({ part_of_speech: endingsPoS });
-      if (endingsPoS === "czasownik") {
-        params.set("tenses", endingsTenses.join(","));
-      } else {
-        params.set("cases", endingsCases.join(","));
-      }
-      if (endingsQuestion?.word_id) params.set("exclude_word_id", endingsQuestion.word_id);
-      const r = await fetch(buildUrl(`endings/question?${params}`));
-      if (r.ok) setEndingsQuestion(await r.json());
-      else setEndingsQuestion(null);
+      const data = await api.endings.getQuestion({
+        part_of_speech: endingsPoS,
+        tenses: endingsPoS === "czasownik" ? endingsTenses.join(",") : undefined,
+        cases: endingsPoS === "czasownik" ? undefined : endingsCases.join(","),
+        exclude_word_id: endingsQuestion?.word_id || undefined,
+      });
+      setEndingsQuestion(data ?? null);
     } catch (e) { console.error(e); setEndingsQuestion(null); }
   };
 
   const fetchEndingsStats = async () => {
     try {
-      const r = await fetch(buildUrl("endings/stats"));
-      if (r.ok) setEndingsStats(await r.json());
+      const data = await api.endings.getStats();
+      if (data) setEndingsStats(data);
     } catch (e) { console.error(e); }
   };
 
@@ -576,9 +573,8 @@ function App() {
     const answerText = selected || endingsWriteAnswer.trim();
     if (!answerText) return;
     try {
-      const r = await fetch(buildUrl("endings/validate"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word_id: endingsQuestion.word_id, answer: answerText, correct_answer: endingsQuestion.correct_answer }) });
-      if (!r.ok) throw new Error();
-      const p = await r.json();
+      const p = await api.endings.validate({ word_id: endingsQuestion.word_id, answer: answerText, correct_answer: endingsQuestion.correct_answer });
+      if (!p) throw new Error();
       setEndingsStatus({ type: p.was_correct ? "success" : "error", message: p.was_correct ? "Correct!" : `Incorrect. The answer was "${p.correct_answer}".` });
       setEndingsStats(p.stats);
       setEndingsWriteAnswer("");
@@ -591,7 +587,7 @@ function App() {
     if (!endingsQuestion) return;
     if (endingsStatusTimeoutRef.current) clearTimeout(endingsStatusTimeoutRef.current);
     try {
-      await fetch(buildUrl("endings/validate"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word_id: endingsQuestion.word_id, answer: "", correct_answer: endingsQuestion.correct_answer }) });
+      await api.endings.validate({ word_id: endingsQuestion.word_id, answer: "", correct_answer: endingsQuestion.correct_answer });
       setEndingsStatus({ type: "info", message: `Skipped. The answer was "${endingsQuestion.correct_answer}".` });
       await fetchEndingsStats();
       setEndingsWriteAnswer("");
