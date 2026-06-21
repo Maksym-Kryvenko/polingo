@@ -53,3 +53,35 @@ def test_gender_remap_defaults_legacy_meski_to_inanimate(tmp_path, monkeypatch):
     gender = con.execute("SELECT gender FROM word WHERE polish='kot'").fetchone()[0]
     con.close()
     assert gender == "męskorzeczowy"
+
+
+def test_pronoun_relabel_oni_one_to_oni(tmp_path, monkeypatch):
+    db = tmp_path / "pron.db"
+    monkeypatch.setenv("POLINGO_DATABASE_URL", f"sqlite:///{db}")
+    cfg = _alembic_cfg(str(db))
+    command.upgrade(cfg, "0002_gender_five_way")
+
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO word (polish, english, ukrainian, part_of_speech) "
+                "VALUES ('robić', 'to do', 'робити', 'czasownik')")
+    wid = con.execute("SELECT id FROM word WHERE polish='robić'").fetchone()[0]
+    con.execute("INSERT INTO verbconjugation (word_id, pronoun, tense, conjugated_form) "
+                "VALUES (?, 'oni/one', 'przeszły', 'robili')", (wid,))
+    con.execute("INSERT INTO verbconjugation (word_id, pronoun, tense, conjugated_form) "
+                "VALUES (?, 'oni/one', 'teraźniejszy', 'robią')", (wid,))
+    con.commit()
+    con.close()
+
+    command.upgrade(cfg, "0003_pronoun_virility")
+
+    con = sqlite3.connect(db)
+    # past-tense row relabelled to virile oni, NOT duplicated as one
+    past = con.execute("SELECT pronoun FROM verbconjugation "
+                       "WHERE word_id=? AND tense='przeszły'", (wid,)).fetchall()
+    # present-tense row relabelled to oni AND duplicated as one
+    present = {r[0] for r in con.execute(
+        "SELECT pronoun FROM verbconjugation WHERE word_id=? AND tense='teraźniejszy'",
+        (wid,)).fetchall()}
+    con.close()
+    assert past == [("oni",)]
+    assert present == {"oni", "one"}

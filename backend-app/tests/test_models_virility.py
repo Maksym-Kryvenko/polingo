@@ -21,3 +21,13 @@ def test_is_animate_masculine_covers_both_masc_animate_genders():
     assert is_animate_masculine(GrammaticalGender.meskorzeczowy) is False
     assert is_animate_masculine(GrammaticalGender.zenski) is False
     assert is_animate_masculine(None) is False
+
+
+from app.models import Pronoun
+
+
+def test_pronoun_splits_oni_one():
+    values = {p.value for p in Pronoun}
+    assert "oni" in values
+    assert "one" in values
+    assert "oni/one" not in values

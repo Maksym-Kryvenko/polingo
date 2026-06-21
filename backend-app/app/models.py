@@ -92,7 +92,8 @@ class Pronoun(str, Enum):
     on_ona_ono = "on/ona/ono"
     my = "my"
     wy = "wy"
-    oni_one = "oni/one"
+    oni = "oni"   # męskoosobowy (virile) plural — "oni robili"
+    one = "one"   # niemęskoosobowy (non-virile) plural — "one robiły"
 
 
 # ── Core tables ──────────────────────────────────────────────

@@ -44,7 +44,8 @@ PRONOUN_MAP = {
     "on_ona_ono": Pronoun.on_ona_ono,
     "my": Pronoun.my,
     "wy": Pronoun.wy,
-    "oni_one": Pronoun.oni_one,
+    "oni": Pronoun.oni,
+    "one": Pronoun.one,
 }
 
 
