@@ -32,7 +32,9 @@ def resolve_word_via_llm(text: str) -> Dict[str, Any]:
         "part of speech of the POLISH form. "
         "Return JSON only with keys: detected_language, corrected_input, polish, english, ukrainian, "
         "part_of_speech (one of: rzeczownik, czasownik, przymiotnik, zaimek, przysłówek, inne), "
-        "gender (for rzeczownik only: męski, żeński, or nijaki; null otherwise). "
+        "gender (for rzeczownik only: one of męskoosobowy [masc. personal], "
+        "męskozywotny [masc. animate], męskorzeczowy [masc. inanimate], żeński, "
+        "or nijaki; null otherwise). "
         "Use lowercase for translations unless proper noun."
     )
     response = client.responses.create(
@@ -193,7 +195,8 @@ def generate_declensions_via_llm(
         prompt = (
             "You are a Polish language expert. Given a Polish adjective, "
             "generate all 7 case forms (mianownik, dopełniacz, celownik, biernik, narzędnik, "
-            "miejscownik, wołacz) for all three genders (męski, żeński, nijaki) "
+            "miejscownik, wołacz) for all five genders (męskoosobowy, męskozywotny, "
+            "męskorzeczowy, żeński, nijaki) "
             "in both singular and plural. "
             "Return JSON with key 'forms' which is an array of objects, each with: "
             "case (string), gender (string), number ('singular' or 'plural'), form (string)."

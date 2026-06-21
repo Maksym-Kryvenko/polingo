@@ -6,6 +6,7 @@ Create Date: 2026-06-21 13:49:12.117550
 """
 from alembic import op
 import sqlalchemy as sa
+import sqlmodel
 
 
 revision = "0001_baseline"

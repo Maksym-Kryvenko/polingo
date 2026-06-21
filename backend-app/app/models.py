@@ -43,9 +43,36 @@ class GrammaticalCase(str, Enum):
 
 
 class GrammaticalGender(str, Enum):
-    meski = "męski"
+    meskoosobowy = "męskoosobowy"      # masculine personal (virile)
+    meskozywotny = "męskozywotny"      # masculine animate (non-personal)
+    meskorzeczowy = "męskorzeczowy"    # masculine inanimate
     zenski = "żeński"
     nijaki = "nijaki"
+
+
+def is_virile(gender) -> bool:
+    """True only for męskoosobowy — the gender that drives virile PLURAL
+    agreement and the accusative-PLURAL=genitive-plural rule (B1).
+
+    NOTE: this is a plural-only distinction. It does NOT govern the accusative
+    SINGULAR, which follows animacy: both męskoosobowy AND męskozywotny take
+    Acc.Sg = Gen.Sg (kota, psa). Use is_animate_masculine() for singular."""
+    if gender is None:
+        return False
+    value = gender.value if isinstance(gender, GrammaticalGender) else str(gender)
+    return value == GrammaticalGender.meskoosobowy.value
+
+
+def is_animate_masculine(gender) -> bool:
+    """True for męskoosobowy and męskozywotny — the genders whose accusative
+    SINGULAR equals the genitive singular (widzę kota/studenta, not *kot)."""
+    if gender is None:
+        return False
+    value = gender.value if isinstance(gender, GrammaticalGender) else str(gender)
+    return value in {
+        GrammaticalGender.meskoosobowy.value,
+        GrammaticalGender.meskozywotny.value,
+    }
 
 
 class GrammaticalNumber(str, Enum):

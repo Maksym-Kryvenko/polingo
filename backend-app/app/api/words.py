@@ -59,6 +59,8 @@ def _generate_forms_background(word_id: int, polish: str, part_of_speech: str, g
                 for f in raw_forms:
                     case_val = f.get("case", "")
                     gender_val = f.get("gender", gender or "")
+                    if gender_val == "męski":
+                        gender_val = "męskorzeczowy"  # legacy value safety net
                     number_val = f.get("number", "singular")
                     form_val = f.get("form", "")
                     if not form_val or not case_val:

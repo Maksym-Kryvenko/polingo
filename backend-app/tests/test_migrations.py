@@ -33,3 +33,23 @@ def test_upgrade_head_builds_attempt_and_drops_old_tables(tmp_path, monkeypatch)
     assert "attempt" in names
     assert "practicerecord" not in names
     assert "endingspracticerecord" not in names
+
+
+def test_gender_remap_defaults_legacy_meski_to_inanimate(tmp_path, monkeypatch):
+    db = tmp_path / "gender.db"
+    monkeypatch.setenv("POLINGO_DATABASE_URL", f"sqlite:///{db}")
+    cfg = _alembic_cfg(str(db))
+    command.upgrade(cfg, "0001_baseline")
+
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO word (polish, english, ukrainian, part_of_speech, gender) "
+                "VALUES ('kot', 'cat', 'кіт', 'rzeczownik', 'męski')")
+    con.commit()
+    con.close()
+
+    command.upgrade(cfg, "0002_gender_five_way")
+
+    con = sqlite3.connect(db)
+    gender = con.execute("SELECT gender FROM word WHERE polish='kot'").fetchone()[0]
+    con.close()
+    assert gender == "męskorzeczowy"
