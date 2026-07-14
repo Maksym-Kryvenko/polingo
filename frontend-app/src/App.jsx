@@ -1,14 +1,7 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import * as api from "./api";
-
-function shuffleArray(array) {
-  const shuffled = [...array];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled;
-}
+import { useSession } from "./hooks/useSession";
+import { usePractice } from "./hooks/usePractice";
 
 function renderSpellingDiff(userAnswer, correctAnswer) {
   const result = [];
@@ -57,24 +50,13 @@ function App() {
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
-  const [languageSet, setLanguageSet] = useState("english");
+
+  const { languageSet, wordPool, stats, loadingStats, refreshSession, refreshStats, changeLanguage, setLanguageSet, setWordPool, setStats } = useSession();
+  const { practiceMode, setPracticeMode, practiceDirection, setPracticeDirection, practiceIndex, setPracticeIndex, answer, setAnswer, practiceStatus, setPracticeStatus, shuffledWords, setShuffledWords, lastAnswer, setLastAnswer, chooseQuestion, setChooseQuestion, practiceStatusTimeoutRef, resetPracticeState, reshuffleWords } = usePractice({ wordPool, languageSet });
+
   const [manualEntry, setManualEntry] = useState("");
   const [manualStatus, setManualStatus] = useState(null);
   const [addingWords, setAddingWords] = useState(false);
-  const [wordPool, setWordPool] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [loadingStats, setLoadingStats] = useState(true);
-
-  // Unified practice state
-  const [practiceMode, setPracticeMode] = useState("translation"); // translation | writing | choose
-  const [practiceDirection, setPracticeDirection] = useState("from_polish");
-  const [practiceIndex, setPracticeIndex] = useState(0);
-  const [answer, setAnswer] = useState("");
-  const [practiceStatus, setPracticeStatus] = useState(null);
-  const [shuffledWords, setShuffledWords] = useState([]);
-  const [lastAnswer, setLastAnswer] = useState(null);
-  const [chooseQuestion, setChooseQuestion] = useState(null);
-  const practiceStatusTimeoutRef = useRef(null);
 
   // Pronunciation state
   const [isRecording, setIsRecording] = useState(false);
@@ -133,24 +115,6 @@ function App() {
   const [showEndingsSettings, setShowEndingsSettings] = useState(false);
 
   // ── Fetch helpers ─────────────────────────────────────────
-  const fetchStats = async () => {
-    setLoadingStats(true);
-    try {
-      const data = await api.stats.getStats();
-      if (data) setStats(data);
-    } catch (e) { console.error(e); }
-    finally { setLoadingStats(false); }
-  };
-
-  const fetchSession = async () => {
-    try {
-      const data = await api.session.getSession();
-      if (data) {
-        setLanguageSet(data.language_set);
-        setWordPool(data.words ?? []);
-      }
-    } catch (e) { console.error(e); }
-  };
 
   const fetchAllWords = async () => {
     try {
@@ -341,7 +305,7 @@ function App() {
   };
 
   // ── Effects ───────────────────────────────────────────────
-  useEffect(() => { fetchStats(); fetchSession(); fetchEndingsConfig(); fetchTtsSetting(); }, []);
+  useEffect(() => { fetchEndingsConfig(); fetchTtsSetting(); }, []);
 
   useEffect(() => {
     if (activePage === "manage") fetchAllWords();
@@ -356,11 +320,7 @@ function App() {
   }, [activePage]);
 
   useEffect(() => {
-    setAnswer("");
-    setPracticeStatus(null);
-    setPracticeIndex(0);
-    setLastAnswer(null);
-    setChooseQuestion(null);
+    resetPracticeState();
     setPronunciationStatus(null);
     setPronunciationIndex(0);
     setEndingsStatus(null);
@@ -369,12 +329,10 @@ function App() {
     setShowGrammar(false);
 
     if (activePage === "practice") {
-      setShuffledWords(shuffleArray(wordPool));
       if (practiceMode === "choose") fetchChooseQuestion();
     }
-    if (activePage === "pronunciation") setShuffledWords(shuffleArray(wordPool));
     if (activePage === "endings") { fetchEndingsQuestion(); fetchEndingsStats(); }
-  }, [activePage, languageSet, wordPool]);
+  }, [activePage, languageSet, wordPool, practiceMode]);
 
   // Refetch choose question when direction or mode changes
   useEffect(() => {
@@ -396,8 +354,7 @@ function App() {
 
   // ── Practice handlers ─────────────────────────────────────
   const handleLanguageChange = async (value) => {
-    setLanguageSet(value);
-    try { await api.session.setLanguage(value); } catch (e) { console.error(e); }
+    await changeLanguage(value);
   };
 
   const handleLoadInitial = async () => {
@@ -419,7 +376,7 @@ function App() {
       if (trimmed.includes(",")) {
         const p = await api.words.checkWordsBulk(trimmed);
         if (!p) throw new Error();
-        await fetchSession();
+        await refreshSession();
         const msgs = [];
         if (p.added_count > 0) msgs.push(`Added ${p.added_count} word(s)`);
         if (p.duplicate_count > 0) msgs.push(`${p.duplicate_count} already in session`);
@@ -608,7 +565,7 @@ function App() {
         setAllWords((prev) => prev.map((w) => (w.id === wordId ? { ...w, ...updated } : w)));
         setEditingWordId(null);
         setEditingValues({ polish: "", english: "", ukrainian: "" });
-        await fetchSession();
+        await refreshSession();
       }
     } catch (e) { console.error(e); }
     finally { setEditSaving(false); }
