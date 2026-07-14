@@ -4,7 +4,7 @@ from sqlmodel import Session, select
 from app.database import engine
 from app import config
 from app.llm import get_openai_client
-from app.models import EndingsPracticeRecord, PracticeRecord, Word
+from app.models import Attempt, AttemptKind, Word
 from app.schemas import (
     ExplainRequest,
     ExplainResponse,
@@ -32,51 +32,31 @@ def get_history(
 ) -> HistoryResponse:
     """Return unified practice history across all sections."""
     with Session(engine) as session:
-        records: list[HistoryRecord] = []
-
-        # Practice records (translation, writing, pronunciation)
-        practice_rows = session.exec(
-            select(PracticeRecord).order_by(PracticeRecord.created_at.desc())
+        rows = session.exec(
+            select(Attempt).order_by(Attempt.created_at.desc())
         ).all()
-        for r in practice_rows:
+        records: list[HistoryRecord] = []
+        for r in rows:
             word = session.get(Word, r.word_id)
             word_polish = word.polish if word else "?"
             word_translation = getattr(word, language_set, "?") if word else "?"
+            if r.kind == AttemptKind.practice and r.direction is not None:
+                section = r.direction.value
+            else:
+                section = "endings"
             records.append(HistoryRecord(
                 id=r.id,
                 word_polish=word_polish,
                 word_translation=word_translation,
-                section=r.direction.value,
+                section=section,
                 was_correct=r.was_correct,
                 created_at=r.created_at,
                 user_answer=r.user_answer,
                 correct_answer=r.correct_answer,
             ))
 
-        # Endings records
-        endings_rows = session.exec(
-            select(EndingsPracticeRecord).order_by(EndingsPracticeRecord.created_at.desc())
-        ).all()
-        for r in endings_rows:
-            word = session.get(Word, r.word_id)
-            word_polish = word.polish if word else "?"
-            word_translation = getattr(word, language_set, "?") if word else "?"
-            records.append(HistoryRecord(
-                id=r.id + 1_000_000,  # offset to avoid id collision
-                word_polish=word_polish,
-                word_translation=word_translation,
-                section="endings",
-                was_correct=r.was_correct,
-                created_at=r.created_at,
-                user_answer=r.user_answer,
-                correct_answer=r.correct_answer,
-            ))
-
-        # Sort all by created_at descending
-        records.sort(key=lambda x: x.created_at, reverse=True)
         total = len(records)
         page = records[offset:offset + limit]
-
         return HistoryResponse(records=page, total=total)
 
 

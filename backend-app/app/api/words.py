@@ -44,7 +44,8 @@ PRONOUN_MAP = {
     "on_ona_ono": Pronoun.on_ona_ono,
     "my": Pronoun.my,
     "wy": Pronoun.wy,
-    "oni_one": Pronoun.oni_one,
+    "oni": Pronoun.oni,
+    "one": Pronoun.one,
 }
 
 
@@ -59,6 +60,8 @@ def _generate_forms_background(word_id: int, polish: str, part_of_speech: str, g
                 for f in raw_forms:
                     case_val = f.get("case", "")
                     gender_val = f.get("gender", gender or "")
+                    if gender_val == "męski":
+                        gender_val = "męskorzeczowy"  # legacy value safety net
                     number_val = f.get("number", "singular")
                     form_val = f.get("form", "")
                     if not form_val or not case_val:
@@ -256,6 +259,7 @@ def check_word(payload: WordCheckRequest) -> WordCheckResponse:
             ukrainian=resolved["ukrainian"],
             part_of_speech=pos_enum,
             gender=resolved.get("gender"),
+            aspect=resolved.get("aspect"),
         )
         session.add(new_word)
         session.commit()
@@ -349,6 +353,7 @@ def check_single_word(
         ukrainian=resolved["ukrainian"],
         part_of_speech=pos_enum,
         gender=resolved.get("gender"),
+        aspect=resolved.get("aspect"),
     )
     session.add(new_word)
     session.commit()
@@ -471,6 +476,7 @@ async def check_words_bulk(payload: WordCheckBulkRequest) -> WordCheckBulkRespon
                         polish=resolved["polish"], english=resolved["english"],
                         ukrainian=resolved["ukrainian"], part_of_speech=pos_enum,
                         gender=resolved.get("gender"),
+                        aspect=resolved.get("aspect"),
                     )
                     session.add(new_word)
                     session.commit()

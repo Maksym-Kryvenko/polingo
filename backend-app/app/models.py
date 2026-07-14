@@ -43,9 +43,36 @@ class GrammaticalCase(str, Enum):
 
 
 class GrammaticalGender(str, Enum):
-    meski = "męski"
+    meskoosobowy = "męskoosobowy"      # masculine personal (virile)
+    meskozywotny = "męskozywotny"      # masculine animate (non-personal)
+    meskorzeczowy = "męskorzeczowy"    # masculine inanimate
     zenski = "żeński"
     nijaki = "nijaki"
+
+
+def is_virile(gender) -> bool:
+    """True only for męskoosobowy — the gender that drives virile PLURAL
+    agreement and the accusative-PLURAL=genitive-plural rule (B1).
+
+    NOTE: this is a plural-only distinction. It does NOT govern the accusative
+    SINGULAR, which follows animacy: both męskoosobowy AND męskozywotny take
+    Acc.Sg = Gen.Sg (kota, psa). Use is_animate_masculine() for singular."""
+    if gender is None:
+        return False
+    value = gender.value if isinstance(gender, GrammaticalGender) else str(gender)
+    return value == GrammaticalGender.meskoosobowy.value
+
+
+def is_animate_masculine(gender) -> bool:
+    """True for męskoosobowy and męskozywotny — the genders whose accusative
+    SINGULAR equals the genitive singular (widzę kota/studenta, not *kot)."""
+    if gender is None:
+        return False
+    value = gender.value if isinstance(gender, GrammaticalGender) else str(gender)
+    return value in {
+        GrammaticalGender.meskoosobowy.value,
+        GrammaticalGender.meskozywotny.value,
+    }
 
 
 class GrammaticalNumber(str, Enum):
@@ -59,13 +86,19 @@ class VerbTense(str, Enum):
     przyszly = "przyszły"
 
 
+class Aspect(str, Enum):
+    dokonany = "dokonany"        # perfective
+    niedokonany = "niedokonany"  # imperfective
+
+
 class Pronoun(str, Enum):
     ja = "ja"
     ty = "ty"
     on_ona_ono = "on/ona/ono"
     my = "my"
     wy = "wy"
-    oni_one = "oni/one"
+    oni = "oni"   # męskoosobowy (virile) plural — "oni robili"
+    one = "one"   # niemęskoosobowy (non-virile) plural — "one robiły"
 
 
 # ── Core tables ──────────────────────────────────────────────
@@ -78,6 +111,7 @@ class Word(SQLModel, table=True):
     ukrainian: str
     part_of_speech: PartOfSpeech = Field(default=PartOfSpeech.inne, index=True)
     gender: Optional[str] = Field(default=None)  # for nouns: męski/żeński/nijaki
+    aspect: Optional[Aspect] = Field(default=None)  # for czasownik only (M4/M5)
 
 
 class WordOption(SQLModel, table=True):
@@ -155,26 +189,24 @@ class UserSessionWord(SQLModel, table=True):
 # ── Practice records ─────────────────────────────────────────
 
 
-class PracticeRecord(SQLModel, table=True):
+class AttemptKind(str, Enum):
+    practice = "practice"   # translation / writing / pronunciation
+    endings = "endings"     # grammar endings practice
+
+
+class Attempt(SQLModel, table=True):
+    """Single source of truth for one graded answer (M3). Supersedes the
+    disjoint PracticeRecord + EndingsPracticeRecord tables."""
     id: Optional[int] = Field(default=None, primary_key=True)
-    word_id: int = Field(foreign_key="word.id")
-    language_set: LanguageSet
-    direction: PracticeDirection
+    word_id: int = Field(foreign_key="word.id", index=True)
+    kind: AttemptKind = Field(index=True)
+    language_set: Optional[LanguageSet] = Field(default=None)
+    direction: Optional[PracticeDirection] = Field(default=None)
+    part_of_speech: Optional[PartOfSpeech] = Field(default=None)
     was_correct: bool
     user_answer: Optional[str] = Field(default=None)
     correct_answer: Optional[str] = Field(default=None)
-    practice_date: date = Field(default_factory=date.today)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-
-
-class EndingsPracticeRecord(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    word_id: int = Field(foreign_key="word.id")
-    part_of_speech: PartOfSpeech
-    was_correct: bool
-    user_answer: Optional[str] = Field(default=None)
-    correct_answer: Optional[str] = Field(default=None)
-    practice_date: date = Field(default_factory=date.today)
+    practice_date: date = Field(default_factory=date.today, index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

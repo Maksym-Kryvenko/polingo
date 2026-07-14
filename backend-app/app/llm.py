@@ -32,7 +32,10 @@ def resolve_word_via_llm(text: str) -> Dict[str, Any]:
         "part of speech of the POLISH form. "
         "Return JSON only with keys: detected_language, corrected_input, polish, english, ukrainian, "
         "part_of_speech (one of: rzeczownik, czasownik, przymiotnik, zaimek, przysłówek, inne), "
-        "gender (for rzeczownik only: męski, żeński, or nijaki; null otherwise). "
+        "gender (for rzeczownik only: one of męskoosobowy [masc. personal], "
+        "męskozywotny [masc. animate], męskorzeczowy [masc. inanimate], żeński, "
+        "or nijaki; null otherwise), "
+        "aspect (for czasownik only: dokonany or niedokonany; null otherwise). "
         "Use lowercase for translations unless proper noun."
     )
     response = client.responses.create(
@@ -51,6 +54,7 @@ def resolve_word_via_llm(text: str) -> Dict[str, Any]:
         "ukrainian": str(payload.get("ukrainian", "")),
         "part_of_speech": str(payload.get("part_of_speech", "inne")),
         "gender": payload.get("gender"),
+        "aspect": payload.get("aspect"),
     }
 
 
@@ -151,10 +155,13 @@ def generate_verb_conjugations_via_llm(
         "You are a Polish language expert. Given a Polish verb infinitive, generate conjugations "
         f"for the following tenses: {tenses_str}. "
         "Return JSON with key 'conjugations' which is an object where each key is a tense name "
-        "and each value is an object with pronoun keys (ja, ty, on_ona_ono, my, wy, oni_one) "
+        "and each value is an object with pronoun keys (ja, ty, on_ona_ono, my, wy, oni, one) "
         "mapping to the conjugated Polish form. "
         "For past tense, use masculine forms for ja/ty/on and feminine for ona; "
-        "provide the most common form for each pronoun. "
+        "'oni' is the męskoosobowy (virile) plural form (e.g. robili) and 'one' is the "
+        "niemęskoosobowy (non-virile) plural form (e.g. robiły). "
+        "For present and future tense, 'oni' and 'one' take IDENTICAL forms — return the "
+        "same conjugated form under both keys (e.g. oni robią / one robią). "
         "For future tense of imperfective verbs, use 'będę + infinitive' pattern. "
         "For perfective verbs, conjugate in the present form (which has future meaning)."
     )
@@ -193,7 +200,8 @@ def generate_declensions_via_llm(
         prompt = (
             "You are a Polish language expert. Given a Polish adjective, "
             "generate all 7 case forms (mianownik, dopełniacz, celownik, biernik, narzędnik, "
-            "miejscownik, wołacz) for all three genders (męski, żeński, nijaki) "
+            "miejscownik, wołacz) for all five genders (męskoosobowy, męskozywotny, "
+            "męskorzeczowy, żeński, nijaki) "
             "in both singular and plural. "
             "Return JSON with key 'forms' which is an array of objects, each with: "
             "case (string), gender (string), number ('singular' or 'plural'), form (string)."

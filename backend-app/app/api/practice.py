@@ -13,7 +13,8 @@ from app.llm import (
 )
 from app.models import (
     AppSetting,
-    PracticeRecord,
+    Attempt,
+    AttemptKind,
     PracticeDirection,
     Word,
     WordLanguage,
@@ -39,7 +40,7 @@ router = APIRouter(prefix="/practice", tags=["practice"])
 @router.post("/submit", response_model=StatsResponse)
 def submit_practice(payload: PracticeSubmission) -> StatsResponse:
     with Session(engine) as session:
-        session.add(PracticeRecord(**payload.model_dump()))
+        session.add(Attempt(kind=AttemptKind.practice, **payload.model_dump()))
         session.commit()
         return calculate_stats(session)
 
@@ -103,7 +104,8 @@ def validate_practice(payload: PracticeValidationRequest) -> PracticeValidationR
                 matched_via = "llm"
 
         session.add(
-            PracticeRecord(
+            Attempt(
+                kind=AttemptKind.practice,
                 word_id=word.id,
                 language_set=payload.language_set,
                 direction=payload.direction,
@@ -149,7 +151,8 @@ def skip_practice(payload: PracticeValidationRequest) -> PracticeValidationRespo
         ).all()
 
         session.add(
-            PracticeRecord(
+            Attempt(
+                kind=AttemptKind.practice,
                 word_id=word.id,
                 language_set=payload.language_set,
                 direction=payload.direction,
@@ -204,7 +207,8 @@ async def validate_pronunciation(
         is_correct = evaluation["is_correct"]
 
         session.add(
-            PracticeRecord(
+            Attempt(
+                kind=AttemptKind.practice,
                 word_id=word.id,
                 language_set=language_set,
                 direction=PracticeDirection.pronunciation,
@@ -328,7 +332,8 @@ def validate_translation_choice(
         )
 
         session.add(
-            PracticeRecord(
+            Attempt(
+                kind=AttemptKind.practice,
                 word_id=word.id,
                 language_set=payload.language_set,
                 direction=practice_direction,
