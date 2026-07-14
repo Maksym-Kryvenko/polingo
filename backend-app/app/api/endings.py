@@ -9,7 +9,8 @@ from app.grammar import get_grammar_reference
 from app.llm import generate_sentence_on_the_fly
 from app.models import (
     AppSetting,
-    EndingsPracticeRecord,
+    Attempt,
+    AttemptKind,
     GrammaticalCase,
     GrammaticalGender,
     GrammaticalNumber,
@@ -354,7 +355,8 @@ def validate_endings(payload: EndingsValidationRequest) -> EndingsValidationResp
     with Session(engine) as session:
         word = session.get(Word, payload.word_id)
         if word:
-            session.add(EndingsPracticeRecord(
+            session.add(Attempt(
+                kind=AttemptKind.endings,
                 word_id=payload.word_id,
                 part_of_speech=word.part_of_speech,
                 was_correct=was_correct,
@@ -384,7 +386,10 @@ def _calculate_endings_stats(session: Session) -> EndingsStatsResponse:
 
     # Today's stats
     today_records = session.exec(
-        select(EndingsPracticeRecord).where(EndingsPracticeRecord.practice_date == today)
+        select(Attempt).where(
+            Attempt.kind == AttemptKind.endings,
+            Attempt.practice_date == today,
+        )
     ).all()
     today_total = len(today_records)
     today_correct = sum(1 for r in today_records if r.was_correct)
@@ -392,8 +397,9 @@ def _calculate_endings_stats(session: Session) -> EndingsStatsResponse:
 
     # Yesterday for trend
     yesterday_records = session.exec(
-        select(EndingsPracticeRecord).where(
-            EndingsPracticeRecord.practice_date == yesterday
+        select(Attempt).where(
+            Attempt.kind == AttemptKind.endings,
+            Attempt.practice_date == yesterday,
         )
     ).all()
     yesterday_total = len(yesterday_records)
@@ -402,7 +408,9 @@ def _calculate_endings_stats(session: Session) -> EndingsStatsResponse:
     trend = today_pct - yesterday_pct
 
     # Overall
-    all_records = session.exec(select(EndingsPracticeRecord)).all()
+    all_records = session.exec(
+        select(Attempt).where(Attempt.kind == AttemptKind.endings)
+    ).all()
     all_total = len(all_records)
     all_correct = sum(1 for r in all_records if r.was_correct)
     overall_pct = (all_correct / all_total * 100) if all_total > 0 else 0.0

@@ -9,12 +9,12 @@ from app.models import (
     UserSession,
     UserSessionWord,
     Word,
-    PracticeRecord,
+    Attempt,
+    AttemptKind,
     WordOption,
     WordDeclension,
     VerbConjugation,
     PracticeSentence,
-    EndingsPracticeRecord,
 )
 from app.schemas import (
     SessionLanguageUpdate,
@@ -45,13 +45,14 @@ def get_words_with_stats(
     # Subquery for word statistics
     stats_subquery = (
         select(
-            PracticeRecord.word_id,
-            func.count(PracticeRecord.id).label("total_attempts"),
-            func.sum(case((PracticeRecord.was_correct == True, 1), else_=0)).label(
+            Attempt.word_id,
+            func.count(Attempt.id).label("total_attempts"),
+            func.sum(case((Attempt.was_correct == True, 1), else_=0)).label(
                 "correct_attempts"
             ),
         )
-        .group_by(PracticeRecord.word_id)
+        .where(Attempt.kind == AttemptKind.practice)
+        .group_by(Attempt.word_id)
         .subquery()
     )
 
@@ -232,14 +233,9 @@ def delete_word(word_id: int):
             ).first()
             if session_word:
                 session.delete(session_word)
-        # Remove practice records
+        # Remove all attempts for this word
         for record in session.exec(
-            select(PracticeRecord).where(PracticeRecord.word_id == word_id)
-        ).all():
-            session.delete(record)
-        # Remove endings practice records
-        for record in session.exec(
-            select(EndingsPracticeRecord).where(EndingsPracticeRecord.word_id == word_id)
+            select(Attempt).where(Attempt.word_id == word_id)
         ).all():
             session.delete(record)
         # Remove word options
