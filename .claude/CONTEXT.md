@@ -27,30 +27,30 @@ Start here. All design/decision/plan documents and what each is for. **Paths are
 | `docs/notes/2026-06-17-frontend-plan6-analysis.md` | **Research note:** App.jsx inventory, proposed Plan 6 component split + Exercise contract, and how Plans 2–4 ripple into the UI/API. | Before writing Plan 6 part 2, or when changing the API contract the UI consumes. |
 | `docs/notes/2026-06-17-qa-strategy.md` | **Research note:** test/QA strategy for Plans 2–4, deterministic-vs-LLM grading tests, validity-matrix tests, regression map for findings, promptfoo scope. | Before writing Plan 4 or 7; to design tests. |
 
-**Plan series:** 1 Foundation ✅ merged → **2 Schema unification (L1, written)** · **3 Form-gen (L4 scaffold, written)** · **5 MCP server (L4, written)** · **6 Frontend split part 1 (L2, written)** · contract-freeze tests (L3, written) → 4 Exercise engine (Topic×Format, not written) → 6 part 2 per-Format UI (blocked on 4) → 7 promptfoo (⏸ paused). The redesign now runs **horizontally as 4 concurrent lanes** — see the design spec, execution map, and `.claude/BOARD.md`. New plans live under `docs/superpowers/plans/` named `YYYY-MM-DD-<feature>.md` — **add a row above when you create one.**
+**Plan series:** 1 Foundation ✅ merged → **2 Schema unification (L1) ✅ merged** · **3 Form-gen (L4 scaffold) ✅ merged** · **5 MCP server (L4) ✅ merged** · **6 Frontend split part 1 (L2) ✅ merged** · contract-freeze tests (L3) ✅ merged → 4 Exercise engine (Topic×Format, not written) → 6 part 2 per-Format UI (blocked on 4) → 7 promptfoo (⏸ paused). The horizontal execution round is **complete** — all four lanes (Q→A→F→B) merged to `main` in order; see `.claude/BOARD.md`. The DB now uses **Alembic** migrations (`backend-app/migrations/versions/0001–0006`); `init_db` runs `upgrade head`. New plans live under `docs/superpowers/plans/` named `YYYY-MM-DD-<feature>.md` — **add a row above when you create one.**
 
 > **Conventions for agents:** ADRs are *decision records* (the why, hard-to-reverse); plans are *step-by-step build instructions* (the how). ADRs marked `Status: proposed` describe the target, not current code — verify against the codebase before assuming a feature exists. When a decision changes, update the ADR's `Status` (e.g. `accepted`/`superseded`) rather than deleting it.
 
 ## Core terms
 
 - **Word** *[live]* — a Polish lexical entry with translations (English, Ukrainian), a part of speech, and (for nouns) a gender. The unit a learner adds to their deck.
-- **Form** *[live]* — an inflected realisation of a Word. Currently **polymorphic across two tables**: a *declension* (noun/adjective in case×gender×number, `WordDeclension`) or a *conjugation* (verb in tense×pronoun, `VerbConjugation`). There is no single `Form` table; the term is an umbrella over both. *[planned]* a virility (męskoosobowy / niemęskoosobowy) axis — see "agreement" below; without it some plural/accusative forms are unrepresentable.
+- **Form** *[live]* — an inflected realisation of a Word. Currently **polymorphic across two tables**: a *declension* (noun/adjective in case×gender×number, `WordDeclension`) or a *conjugation* (verb in tense×pronoun, `VerbConjugation`). There is no single `Form` table; the term is an umbrella over both. *[live]* the virility (męskoosobowy / niemęskoosobowy) axis now exists: the 5-gender model with `is_virile`/`is_animate_masculine`, and the `Pronoun` enum splits `oni`/`one` for virile vs non-virile past-tense storage (Plan 2, migrations 0002/0003).
 - **Deck** *[live]* — the set of Words a learner has chosen to study. Backed by `UserSession` + `UserSessionWord`; there is exactly **one** session for the single user, so "Deck" and "the session word list" are the same thing. Words in a Deck can be enabled or disabled.
 
 ## Practice model
 
 - **Topic** *[partly planned]* — the grammar skill being trained, independent of how it's tested.
   - *[live]* declension/cases, conjugation/tenses (present/past/future).
-  - *[planned, no backing data yet]* aspect (perfective vs imperfective — needs an `aspect` field on Word), agreement (gender + number + virility, and predicate agreement — needs the virility axis), government (preposition→case, negation→genitive — needs a curated rule table). Exercises on these Topics cannot be generated until their data lands.
+  - *[partly live]* aspect (perfective vs imperfective) — the nullable `Word.aspect` field now exists (Plan 2, migration 0004), though aspect-Topic exercises are not yet generated. agreement (gender + number + virility) — the virility axis now exists (see "Form" above). government (preposition→case, negation→genitive) *[planned, no backing data yet]* — still needs a curated rule table.
 - **Format** *[partly planned]* — how an exercise is prompted and answered, independent of Topic.
   - *[live]* multiple-choice, fill-blank, translate, write-to-Polish, speak (`pronunciation`).
   - *[planned]* listen (audio→type), word-order, multi-blank cloze, matching. "speak"/"listen" depend on ASR/TTS wiring.
 - **Exercise** *[planned, ephemeral]* — one concrete question, identified by a (Topic, Format) pair plus the target Word/Form. A runtime concept, not necessarily a stored entity. Topic and Format are orthogonal, but **not every pair is valid** — see ADR-0001's validity matrix.
-- **Attempt** *[planned]* — one learner answer to one Exercise: what they answered, the correct answer, whether it was right, and the grammatical context. The redesign's intended **single source of truth** for stats and history. *Today this does not exist*: results live in two disjoint tables (`PracticeRecord`, `EndingsPracticeRecord`) with no shared supertype, and stats union them. Unifying them is the goal, not the current state.
+- **Attempt** *[live]* — one learner answer to one Exercise: what they answered, the correct answer, whether it was right, and the grammatical context. Now the **single source of truth** for stats and history: the unified `Attempt` table (with `AttemptKind`) landed in Plan 2 (migrations 0005 create, 0006 data cutover + drop). The old `PracticeRecord`/`EndingsPracticeRecord` tables have been dropped; all write sites and stats/history queries read from `Attempt`.
 
 ## Roles & surfaces
 
 - **Learner** *[live]* — the human practising (the single user).
 - **Language set** *[live]* — the learner's chosen translation pairing for a session: Polish↔English or Polish↔Ukrainian. A session-level switch affecting prompts and grading.
-- **MCP client** *[planned]* — Claude Code (or another MCP host) acting on the Learner's behalf to add/curate Words via the MCP server.
+- **MCP client** *[live, standalone]* — Claude Code (or another MCP host) acting on the Learner's behalf to add/curate Words via the MCP server. A standalone FastMCP stdio process (`mcp_server/`) wrapping the REST API via an HTTP client with structured-error passthrough (Plan 5). Not yet wired into the app's own runtime.
 - **Admin / device tracking** *[live]* — the app records connected devices (`ConnectedDevice`) and exposes admin settings. Present despite the single-user framing; used for visibility/debugging, not multi-user isolation.

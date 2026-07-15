@@ -13,23 +13,23 @@ Single tracker for the redesign: what's decided, what's in flight, what's done. 
 | Plan | Scope | Status |
 |---|---|---|
 | 1 — Foundation & Correctness | env config, pytest harness, fail-loud migration, model-ids→config, fixes M2/M9/B2/M10 | ✅ **complete** — merged to `main` (PR #1, `0de2958`); all 6 tasks, 16 tests green |
-| 2 — Schema unification | Alembic, virility model (B1), unified `Attempt` table, data migration | ✍️ **written** — `plans/2026-06-18-polingo-schema-unification.md`. **Lane L1 (critical path)**, branch `plan-2-schema` |
-| 3 — Reliable form-gen | ARQ+Redis worker, `forms_status`, durable retries (ADR-0003) | ✍️ **scaffold written** — in L4 plan `plans/2026-06-20-l4-mcp-and-worker-scaffold.md` (worker scaffold; backend wiring deferred until Plan 2 merges) |
+| 2 — Schema unification | Alembic, virility model (B1), unified `Attempt` table, data migration | ✅ **complete** — merged to `main` (`b951adc`). Alembic 0001–0006, 5-gender virility, nullable `aspect`, unified `Attempt` (old record tables dropped) |
+| 3 — Reliable form-gen | ARQ+Redis worker, `forms_status`, durable retries (ADR-0003) | ✅ **scaffold complete** — merged to `main` (`5696b8a`). `worker/` has `forms_status` state machine + ARQ task scaffold; backend runtime wiring still deferred (see parking lot) |
 | 4 — Exercise engine | Topic×Format generation + deterministic grading + validity matrix (ADR-0001) | 🔲 not written (unblocks Plan 6 part 2) |
-| 5 — MCP server | FastMCP stdio, add/manage/stats tools (ADR-0002) | ✍️ **written** — `plans/2026-06-20-l4-mcp-and-worker-scaffold.md`. **Lane L4**, branch `plan-5-mcp` |
-| 6 — Frontend split | API client, state layer, per-Format components | ✍️ **part 1 written** — `plans/2026-06-20-l2-frontend-refactor.md` (API client + state layer). **Lane L2**, branch `plan-6-fe-refactor`. Part 2 (per-Format components) blocked on Plan 4 |
+| 5 — MCP server | FastMCP stdio, add/manage/stats tools (ADR-0002) | ✅ **complete** — merged to `main` (`5696b8a`). `mcp_server/` standalone FastMCP stdio: backend HTTP client + word-management tools |
+| 6 — Frontend split | API client, state layer, per-Format components | ✅ **part 1 complete** — merged to `main` (`1c4997a`). Per-domain API clients + `useSession`/`usePractice` hooks + Vitest. Part 2 (per-Format components) blocked on Plan 4 |
 | 7 — promptfoo evals | gold-form configs, OpenAI↔Claude matrix, CI gate | ⏸ **paused** — postponed; not in the current parallel round |
 
 ### Horizontal execution (2026-06-20)
 
-The redesign now runs as **4 concurrent lanes** instead of one sequential backend track. See `plans/2026-06-20-horizontal-execution-map.md` (DAG, file-ownership, merge order) and the design `specs/2026-06-20-horizontal-execution-model-design.md`. Live task board: `.claude/BOARD.md`.
+The redesign ran as **4 concurrent lanes** instead of one sequential backend track. See `plans/2026-06-20-horizontal-execution-map.md` (DAG, file-ownership, merge order) and the design `specs/2026-06-20-horizontal-execution-model-design.md`. Task board: `.claude/BOARD.md`. **Round complete — all lanes merged to `main` in order (2026-07-15).**
 
-| Lane | Branch | Plan | Merge order |
-|---|---|---|---|
-| L1 Backend A (critical) | `plan-2-schema` | Plan 2 | 2nd |
-| L2 Frontend | `plan-6-fe-refactor` | Plan 6 part 1 | 3rd |
-| L3 QA/Testing | `test-contract-freeze` | contract-freeze tests | **1st (Gate 0)** |
-| L4 Backend B | `plan-5-mcp` | Plan 5 + Plan 3 scaffold | 4th |
+| Lane | Branch | Plan | Merge order | Status |
+|---|---|---|---|---|
+| L3 QA/Testing | `test-contract-freeze` | contract-freeze tests | **1st (Gate 0)** | ✅ merged (`498d697`) |
+| L1 Backend A (critical) | `plan-2-schema` | Plan 2 | 2nd | ✅ merged (`b951adc`) |
+| L2 Frontend | `plan-6-fe-refactor` | Plan 6 part 1 | 3rd | ✅ merged (`1c4997a`) |
+| L4 Backend B | `plan-5-mcp` | Plan 5 + Plan 3 scaffold | 4th | ✅ merged (`5696b8a`) |
 
 ---
 
@@ -38,23 +38,23 @@ The redesign now runs as **4 concurrent lanes** instead of one sequential backen
 ### Blockers
 | ID | Finding | Status | Handled by |
 |---|---|---|---|
-| B1 | Gender model lacks virility (męskoosobowy); `Pronoun.oni_one` bundled → can't store `oni robili`/`one robiły` | 🔜 | Plan 2 (schema + Alembic) |
-| B2 | `grammar.py` masculine accusative-**plural** uses singular animacy rule (wrong form taught) | 🔜 | Plan 1 · Task 5 |
-| B3 | `database.py` migration swallows all errors; `create_all` can't alter tables | ✅ fail-loud done (branch) · 🔜 Alembic | Plan 1 · Task 2 ✅ + Plan 2 (Alembic) |
+| B1 | Gender model lacks virility (męskoosobowy); `Pronoun.oni_one` bundled → can't store `oni robili`/`one robiły` | ✅ | Plan 2 (5-gender + `oni`/`one` split, migrations 0002/0003, `b951adc`) |
+| B2 | `grammar.py` masculine accusative-**plural** uses singular animacy rule (wrong form taught) | ✅ | Plan 1 · Task 5 |
+| B3 | `database.py` migration swallows all errors; `create_all` can't alter tables | ✅ | Plan 1 · Task 2 (fail-loud) + Plan 2 (Alembic, `init_db` runs `upgrade head`, `b951adc`) |
 
 ### Majors
 | ID | Finding | Status | Handled by |
 |---|---|---|---|
 | M1 | ADRs missing Status/Date/Consequences; ADR-0001 fails hard-to-reverse test | ✅ | Doc fix 2026-06-17 |
 | M2 | LLM-approved wrong answers auto-persisted as canonical `WordOption` (correctness ratchet) | 🔜 | Plan 1 · Task 4 |
-| M3 | CONTEXT "Attempt = single source of truth" false (two disjoint record tables) | ✅ glossary / 🔜 structural | Doc fix (clarified) + Plan 2 (unify) |
-| M4 | aspect/government Topics listed but have no backing data | ✅ annotated / 🔜 data | Doc fix (marked planned) + Plan 2 (aspect field) + Plan 4 |
-| M5 | Future tense omits aspect-controls-form hard rule (`*będę zrobić`) | 🔲 | Plan 2 (aspect field) + grammar note |
+| M3 | CONTEXT "Attempt = single source of truth" false (two disjoint record tables) | ✅ | Plan 2 unified `Attempt` table; old record tables dropped (migrations 0005/0006, `b951adc`) |
+| M4 | aspect/government Topics listed but have no backing data | ✅ aspect field / 🔜 government data | Plan 2 nullable `Word.aspect` (migration 0004) landed; government rule table still Plan 4 |
+| M5 | Future tense omits aspect-controls-form hard rule (`*będę zrobić`) | 🔜 | `aspect` field now exists (Plan 2); grammar rule use deferred to Plan 4 |
 | M6 | Degenerate Topic×Format cells break "common contract" claim | ✅ ADR / 🔜 impl | ADR-0001 validity matrix + Plan 4 |
-| M7 | MCP backend-unreachable behaviour undefined | ✅ ADR / 🔜 impl | ADR-0002 Consequences + Plan 5 |
-| M8 | ARQ retry/dead-letter/stuck policy undefined | ✅ ADR / 🔜 impl | ADR-0003 Consequences + Plan 3 |
-| M9 | SQLite engine has no busy timeout → "database is locked" risk | ✅ done (branch) | Plan 1 · Task 2 (`timeout: 30`) |
-| M10 | Nominative-plural virile `-i/-y` alternation unlabelled | 🔜 | Plan 1 · Task 5 |
+| M7 | MCP backend-unreachable behaviour undefined | ✅ | ADR-0002 + Plan 5 MCP HTTP client with structured-error passthrough (`5696b8a`) |
+| M8 | ARQ retry/dead-letter/stuck policy undefined | ✅ scaffold / 🔜 runtime | ADR-0003 + Plan 3 `forms_status` state machine + ARQ scaffold (`5696b8a`); backend wiring deferred |
+| M9 | SQLite engine has no busy timeout → "database is locked" risk | ✅ | Plan 1 · Task 2 (`timeout: 30`) |
+| M10 | Nominative-plural virile `-i/-y` alternation unlabelled | ✅ | Plan 1 · Task 5 |
 
 ### Minors
 | ID | Finding | Status | Handled by |
@@ -84,6 +84,14 @@ The redesign now runs as **4 concurrent lanes** instead of one sequential backen
 ---
 
 ## Changelog
+
+### 2026-07-15
+- **Horizontal execution round complete** — all four lanes merged to `main` in strict order: L3 QA contract-freeze (Gate 0, `498d697`) → L1 Plan 2 schema unification (`b951adc`) → L2 Plan 6 part-1 frontend refactor (`1c4997a`) → L4 Plans 5+3 MCP/worker scaffold (`5696b8a`).
+- **Plan 2 (schema):** adopted Alembic (migrations 0001–0006, `init_db` runs `upgrade head`); 5-gender virility model with `is_virile`/`is_animate_masculine` and `oni`/`one` pronoun split; nullable `Word.aspect`; unified `Attempt` table now the single source of truth — old `PracticeRecord`/`EndingsPracticeRecord` tables dropped, all call sites + stats/history rewritten. Closes **B1, B3, M3, M4 (aspect), M10**.
+- **Plan 5 (MCP):** standalone `mcp_server/` FastMCP stdio process — backend HTTP client with structured-error passthrough + word-management tools. Closes **M7**.
+- **Plan 3 (worker scaffold):** `worker/` `forms_status` state machine + ARQ task scaffold (backend runtime wiring deferred). Addresses **M8** (scaffold).
+- **Plan 6 part 1 (frontend):** extracted per-domain API clients (session/words/practice/endings/stats/admin) + `useSession`/`usePractice` hooks from `App.jsx`; added Vitest infra (24 tests green). No pronoun/gender contract delta — frontend never referenced those enums.
+- Added GitHub Actions CI (`.github/workflows/ci.yml`): backend pytest + frontend build. Doc-sync (DS): flipped statuses in CONTEXT.md/BACKLOG.md/BOARD.md/README.md.
 
 ### 2026-06-18
 - Set up 3 junior agents (haiku): backend / frontend / QA. Backend agent blocked on Bash permission in background mode → lead took over Plan 1 execution.

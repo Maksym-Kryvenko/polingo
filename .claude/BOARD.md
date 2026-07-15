@@ -66,14 +66,14 @@ Lightweight task board for the horizontal execution round. One swimlane per lane
 | B3 | Worker Task 3a: `forms_status` state machine (tested) | 🟦 Ready | — |
 | B4 | Worker Task 3b: ARQ task scaffold + injectable integration point (tested) | 🟦 Ready | B3 |
 | B5 | Worker README documenting deferred backend wiring | 🟦 Ready | B4 |
-| B6 | Rebase on post-Plan-2 main | ⏸ Blocked | B2,B5, A8 |
-| B7 | **Merge to main** | ⏸ Blocked | B6 |
+| B6 | Rebase on post-Plan-2 main | ✅ Done | B2,B5, A8 |
+| B7 | **Merge to main** | ✅ Done | B6 |
 
 ## DS — Doc-sync consolidation (after ALL lanes merge)
 
 | ID | Card | Status | Dep |
 |---|---|---|---|
-| DS | Single editor of `.claude/CONTEXT.md` + `.claude/BACKLOG.md` + `README.md`: mark Attempt/virility/aspect live, Alembic migrations note, flip statuses, changelog | ⏸ Blocked | A8,F8,B7,Q5 |
+| DS | Single editor of `.claude/CONTEXT.md` + `.claude/BACKLOG.md` + `README.md`: mark Attempt/virility/aspect live, Alembic migrations note, flip statuses, changelog | ✅ Done | A8,F8,B7,Q5 |
 
 ---
 

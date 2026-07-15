@@ -9,7 +9,7 @@ Polingo is a minimalist Polish vocabulary trainer for beginners. The web experie
 - **Manual validation:** The backend endpoint `/api/words/check` confirms each hand-typed entry, identifies which language field matched, and rejects inputs that do not yet exist in the database.
 - **Starter deck:** Load the first 10 seeded words to practice immediately without typing anything.
 - **Practice modes:** Choose translation (read Polish, write the translation) or writing (read the translation, write Polish) for targeted drills.
-- **Progress tracking:** A dedicated `practice_record` table stores every attempt so daily and overall accuracy can be computed. The top-right stats pill shows today’s percentage, the trend vs. yesterday, and the overall correct-answer percentage.
+- **Progress tracking:** A unified `attempt` table stores every practice attempt (translation, writing, pronunciation, endings) as the single source of truth, so daily and overall accuracy can be computed. The top-right stats pill shows today’s percentage, the trend vs. yesterday, and the overall correct-answer percentage.
 - **Persistent sessions:** Your language set and practice word list are stored in SQLite so you can resume after restarts.
 - **GPT-assisted additions:** When a word is not found, the backend validates spelling and adds translations using `gpt-4.1-mini`.
 
@@ -20,9 +20,11 @@ Polingo is a minimalist Polish vocabulary trainer for beginners. The web experie
 4. Respond to prompts and submit; every answer updates today’s score instantly.
 
 ## Technology
-- **Frontend:** React with Vite (ESM module build)
-- **Backend:** FastAPI + SQLModel + SQLite
-- **Database:** Local SQLite file seeded with the 100 most common Polish words plus their English and Ukrainian counterparts
+- **Frontend:** React with Vite (ESM module build). API access goes through per-domain clients in `src/api/` (session/words/practice/endings/stats/admin); session and practice state live in `useSession`/`usePractice` hooks. Component tests run under Vitest.
+- **Backend:** FastAPI + SQLModel + SQLite, with **Alembic** migrations (`backend-app/migrations/`); `init_db` runs `alembic upgrade head` on startup.
+- **Database:** Local SQLite file seeded with the 100 most common Polish words plus their English and Ukrainian counterparts. Grammar model carries a 5-way gender with virility (`is_virile`) and a split `oni`/`one` pronoun; every practice result is recorded in the unified `attempt` table.
+- **MCP server** (`mcp_server/`): a standalone FastMCP stdio process that lets an MCP host (e.g. Claude Code) add/curate words via the REST API. Runs separately from the app.
+- **Worker** (`worker/`): an ARQ task scaffold with a `forms_status` state machine for background form generation (runtime wiring to the backend is deferred).
 - **Runtime:** Docker Compose (frontend + backend services)
 
 ## Installation
@@ -57,7 +59,7 @@ cd frontend-app
 npm install
 npm run dev
 ```
-The Vite app hits the backend base URL defined by `VITE_API_BASE_URL` (defaults to `http://localhost:8000/api`). The UI includes the manual validation flow, word preview, practice controls, and the stats pill.
+The Vite app hits the backend base URL defined by `VITE_API_BASE_URL` (defaults to `http://localhost:8000/api`). The UI includes the manual validation flow, word preview, practice controls, and the stats pill. Run the frontend tests with `npm test` (Vitest).
 
 ### Docker
 ```bash
