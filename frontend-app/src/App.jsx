@@ -1,15 +1,7 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? `http://${window.location.hostname}:8000/api`;
-
-function shuffleArray(array) {
-  const shuffled = [...array];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled;
-}
+import * as api from "./api";
+import { useSession } from "./hooks/useSession";
+import { usePractice } from "./hooks/usePractice";
 
 function renderSpellingDiff(userAnswer, correctAnswer) {
   const result = [];
@@ -29,7 +21,6 @@ function renderSpellingDiff(userAnswer, correctAnswer) {
 
 const LANGUAGE_LABELS = { english: "English", ukrainian: "Ukrainian" };
 const FIELD_LABELS = { polish: "Polish entry", english: "English entry", ukrainian: "Ukrainian entry", resolved: "LLM match" };
-const buildUrl = (path) => `${API_BASE_URL}/${path}`;
 const STATUS_HIDE_DELAY = 5000;
 
 function getInitialPage() {
@@ -59,24 +50,13 @@ function App() {
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
-  const [languageSet, setLanguageSet] = useState("english");
+
+  const { languageSet, wordPool, stats, loadingStats, refreshSession, refreshStats, changeLanguage, setLanguageSet, setWordPool, setStats } = useSession();
+  const { practiceMode, setPracticeMode, practiceDirection, setPracticeDirection, practiceIndex, setPracticeIndex, answer, setAnswer, practiceStatus, setPracticeStatus, shuffledWords, setShuffledWords, lastAnswer, setLastAnswer, chooseQuestion, setChooseQuestion, practiceStatusTimeoutRef, resetPracticeState, reshuffleWords } = usePractice({ wordPool, languageSet });
+
   const [manualEntry, setManualEntry] = useState("");
   const [manualStatus, setManualStatus] = useState(null);
   const [addingWords, setAddingWords] = useState(false);
-  const [wordPool, setWordPool] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [loadingStats, setLoadingStats] = useState(true);
-
-  // Unified practice state
-  const [practiceMode, setPracticeMode] = useState("translation"); // translation | writing | choose
-  const [practiceDirection, setPracticeDirection] = useState("from_polish");
-  const [practiceIndex, setPracticeIndex] = useState(0);
-  const [answer, setAnswer] = useState("");
-  const [practiceStatus, setPracticeStatus] = useState(null);
-  const [shuffledWords, setShuffledWords] = useState([]);
-  const [lastAnswer, setLastAnswer] = useState(null);
-  const [chooseQuestion, setChooseQuestion] = useState(null);
-  const practiceStatusTimeoutRef = useRef(null);
 
   // Pronunciation state
   const [isRecording, setIsRecording] = useState(false);
@@ -135,31 +115,11 @@ function App() {
   const [showEndingsSettings, setShowEndingsSettings] = useState(false);
 
   // ── Fetch helpers ─────────────────────────────────────────
-  const fetchStats = async () => {
-    setLoadingStats(true);
-    try {
-      const r = await fetch(buildUrl("stats"));
-      if (r.ok) setStats(await r.json());
-    } catch (e) { console.error(e); }
-    finally { setLoadingStats(false); }
-  };
-
-  const fetchSession = async () => {
-    try {
-      const r = await fetch(buildUrl("session"));
-      if (r.ok) {
-        const data = await r.json();
-        setLanguageSet(data.language_set);
-        setWordPool(data.words ?? []);
-      }
-    } catch (e) { console.error(e); }
-  };
 
   const fetchAllWords = async () => {
     try {
-      const r = await fetch(buildUrl("session/words/all"));
-      if (r.ok) {
-        const data = await r.json();
+      const data = await api.session.getAllWords();
+      if (data) {
         setAllWords(data.words ?? []);
       }
     } catch (e) { console.error(e); }
@@ -167,47 +127,45 @@ function App() {
 
   const fetchEndingsConfig = async () => {
     try {
-      const r = await fetch(buildUrl("endings/config"));
-      if (r.ok) setEndingsConfig(await r.json());
+      const data = await api.endings.getConfig();
+      if (data) setEndingsConfig(data);
     } catch (e) { console.error(e); }
   };
 
   const fetchEndingsQuestion = async () => {
     try {
-      const params = new URLSearchParams({ part_of_speech: endingsPoS });
-      if (endingsPoS === "czasownik") {
-        params.set("tenses", endingsTenses.join(","));
-      } else {
-        params.set("cases", endingsCases.join(","));
-      }
-      if (endingsQuestion?.word_id) params.set("exclude_word_id", endingsQuestion.word_id);
-      const r = await fetch(buildUrl(`endings/question?${params}`));
-      if (r.ok) setEndingsQuestion(await r.json());
-      else setEndingsQuestion(null);
+      const data = await api.endings.getQuestion({
+        part_of_speech: endingsPoS,
+        tenses: endingsPoS === "czasownik" ? endingsTenses.join(",") : undefined,
+        cases: endingsPoS === "czasownik" ? undefined : endingsCases.join(","),
+        exclude_word_id: endingsQuestion?.word_id || undefined,
+      });
+      setEndingsQuestion(data ?? null);
     } catch (e) { console.error(e); setEndingsQuestion(null); }
   };
 
   const fetchEndingsStats = async () => {
     try {
-      const r = await fetch(buildUrl("endings/stats"));
-      if (r.ok) setEndingsStats(await r.json());
+      const data = await api.endings.getStats();
+      if (data) setEndingsStats(data);
     } catch (e) { console.error(e); }
   };
 
   const fetchChooseQuestion = async () => {
     try {
-      const excludeParam = chooseQuestion?.word_id ? `&exclude_word_id=${chooseQuestion.word_id}` : "";
-      const r = await fetch(buildUrl(`practice/choose-translation/question?language_set=${languageSet}&direction=${practiceDirection}${excludeParam}`));
-      if (r.ok) setChooseQuestion(await r.json());
-      else setChooseQuestion(null);
+      const data = await api.practice.chooseQuestion({
+        language_set: languageSet,
+        direction: practiceDirection,
+        exclude_word_id: chooseQuestion?.word_id || undefined,
+      });
+      setChooseQuestion(data ?? null);
     } catch (e) { console.error(e); setChooseQuestion(null); }
   };
 
   const fetchConnectedDevices = async () => {
     try {
-      const r = await fetch(buildUrl("admin/devices"));
-      if (r.ok) {
-        const data = await r.json();
+      const data = await api.admin.getDevices();
+      if (data) {
         setConnectedDevices(data.devices);
         setDeviceStats({ total: data.total_count, active: data.active_count });
       }
@@ -216,9 +174,8 @@ function App() {
 
   const fetchAdminSettings = async () => {
     try {
-      const r = await fetch(buildUrl("admin/settings"));
-      if (r.ok) {
-        const data = await r.json();
+      const data = await api.admin.getSettings();
+      if (data) {
         const otf = data.find((s) => s.key === "generate_on_the_fly");
         setGenerateOnTheFly(otf?.value === "true");
         const tts = data.find((s) => s.key === "tts_source");
@@ -229,9 +186,8 @@ function App() {
 
   const fetchTtsSetting = async () => {
     try {
-      const r = await fetch(buildUrl("admin/settings/tts_source"));
-      if (r.ok) {
-        const data = await r.json();
+      const data = await api.admin.getSetting("tts_source");
+      if (data) {
         setTtsSource(data.value ?? "browser");
       }
     } catch (e) { /* setting may not exist yet, keep default */ }
@@ -240,10 +196,7 @@ function App() {
   const toggleOnTheFly = async () => {
     const newVal = !generateOnTheFly;
     try {
-      await fetch(buildUrl("admin/settings/generate_on_the_fly"), {
-        method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value: newVal ? "true" : "false" }),
-      });
+      await api.admin.updateSetting("generate_on_the_fly", newVal ? "true" : "false");
       setGenerateOnTheFly(newVal);
     } catch (e) { console.error(e); }
   };
@@ -251,10 +204,7 @@ function App() {
   const toggleTtsSource = async () => {
     const newVal = ttsSource === "browser" ? "server" : "browser";
     try {
-      await fetch(buildUrl("admin/settings/tts_source"), {
-        method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value: newVal }),
-      });
+      await api.admin.updateSetting("tts_source", newVal);
       setTtsSource(newVal);
     } catch (e) { console.error(e); }
   };
@@ -267,7 +217,7 @@ function App() {
       try {
         let url = ttsCache.current[text];
         if (!url) {
-          const r = await fetch(buildUrl(`practice/tts?text=${encodeURIComponent(text)}`));
+          const r = await fetch(api.practice.ttsUrl(text)); // raw: blob
           if (!r.ok) return;
           const blob = await r.blob();
           url = URL.createObjectURL(blob);
@@ -287,19 +237,15 @@ function App() {
 
   const fetchSentences = async () => {
     try {
-      const r = await fetch(buildUrl("admin/sentences"));
-      if (r.ok) setSentences(await r.json());
+      const data = await api.admin.getSentences();
+      if (data) setSentences(data);
     } catch (e) { console.error(e); }
   };
 
   const handleSaveSentence = async (id) => {
     try {
-      const r = await fetch(buildUrl(`admin/sentences/${id}`), {
-        method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editingSentenceValues),
-      });
-      if (r.ok) {
-        const updated = await r.json();
+      const updated = await api.admin.saveSentence(id, editingSentenceValues);
+      if (updated) {
         setSentences((prev) => prev.map((s) => s.id === id ? updated : s));
         setEditingSentenceId(null);
       }
@@ -309,9 +255,8 @@ function App() {
   const handleFixSentence = async (id) => {
     setSentenceFixingId(id);
     try {
-      const r = await fetch(buildUrl(`admin/sentences/${id}/fix`), { method: "POST" });
-      if (r.ok) {
-        const updated = await r.json();
+      const updated = await api.admin.fixSentence(id);
+      if (updated) {
         setSentences((prev) => prev.map((s) => s.id === id ? updated : s));
       }
     } catch (e) { console.error(e); }
@@ -320,17 +265,16 @@ function App() {
 
   const handleDeleteSentence = async (id) => {
     try {
-      const r = await fetch(buildUrl(`admin/sentences/${id}`), { method: "DELETE" });
-      if (r.ok) setSentences((prev) => prev.filter((s) => s.id !== id));
+      const d = await api.admin.deleteSentence(id);
+      if (d) setSentences((prev) => prev.filter((s) => s.id !== id));
     } catch (e) { console.error(e); }
   };
 
   const fetchHistory = async () => {
     setHistoryLoading(true);
     try {
-      const r = await fetch(buildUrl(`stats/history?limit=100&language_set=${languageSet}`));
-      if (r.ok) {
-        const data = await r.json();
+      const data = await api.stats.getHistory({ limit: 100, language_set: languageSet });
+      if (data) {
         setHistoryRecords(data.records ?? []);
         setHistoryTotal(data.total ?? 0);
       }
@@ -343,20 +287,15 @@ function App() {
     setExplainText("");
     setExplainLoading(true);
     try {
-      const r = await fetch(buildUrl("stats/explain"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          word_polish: record.word_polish,
-          word_translation: record.word_translation,
-          section: record.section,
-          user_answer: record.user_answer,
-          correct_answer: record.correct_answer,
-          was_correct: record.was_correct,
-        }),
+      const data = await api.stats.explain({
+        word_polish: record.word_polish,
+        word_translation: record.word_translation,
+        section: record.section,
+        user_answer: record.user_answer,
+        correct_answer: record.correct_answer,
+        was_correct: record.was_correct,
       });
-      if (r.ok) {
-        const data = await r.json();
+      if (data) {
         setExplainText(data.explanation);
       } else {
         setExplainText("Could not get explanation.");
@@ -366,7 +305,7 @@ function App() {
   };
 
   // ── Effects ───────────────────────────────────────────────
-  useEffect(() => { fetchStats(); fetchSession(); fetchEndingsConfig(); fetchTtsSetting(); }, []);
+  useEffect(() => { fetchEndingsConfig(); fetchTtsSetting(); }, []);
 
   useEffect(() => {
     if (activePage === "manage") fetchAllWords();
@@ -381,11 +320,7 @@ function App() {
   }, [activePage]);
 
   useEffect(() => {
-    setAnswer("");
-    setPracticeStatus(null);
-    setPracticeIndex(0);
-    setLastAnswer(null);
-    setChooseQuestion(null);
+    resetPracticeState();
     setPronunciationStatus(null);
     setPronunciationIndex(0);
     setEndingsStatus(null);
@@ -394,12 +329,10 @@ function App() {
     setShowGrammar(false);
 
     if (activePage === "practice") {
-      setShuffledWords(shuffleArray(wordPool));
       if (practiceMode === "choose") fetchChooseQuestion();
     }
-    if (activePage === "pronunciation") setShuffledWords(shuffleArray(wordPool));
     if (activePage === "endings") { fetchEndingsQuestion(); fetchEndingsStats(); }
-  }, [activePage, languageSet, wordPool]);
+  }, [activePage, languageSet, wordPool, practiceMode]);
 
   // Refetch choose question when direction or mode changes
   useEffect(() => {
@@ -421,18 +354,15 @@ function App() {
 
   // ── Practice handlers ─────────────────────────────────────
   const handleLanguageChange = async (value) => {
-    setLanguageSet(value);
-    try { await fetch(buildUrl("session/language"), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ language_set: value }) }); } catch (e) { console.error(e); }
+    await changeLanguage(value);
   };
 
   const handleLoadInitial = async () => {
     try {
-      const r = await fetch(buildUrl("words/initial?count=10"));
-      if (!r.ok) throw new Error();
-      const payload = await r.json();
-      const saved = await fetch(buildUrl("session/words/bulk"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word_ids: payload.map((w) => w.id) }) });
-      if (!saved.ok) throw new Error();
-      const ss = await saved.json();
+      const payload = await api.words.getInitial(10);
+      if (!payload) throw new Error();
+      const ss = await api.session.addWordsBulk(payload.map((w) => w.id));
+      if (!ss) throw new Error();
       setWordPool(ss.words ?? []);
       setManualStatus({ type: "success", message: "Loaded and saved the first 10 words." });
     } catch (e) { console.error(e); setManualStatus({ type: "error", message: "Could not load starter set." }); }
@@ -444,23 +374,20 @@ function App() {
     setAddingWords(true);
     try {
       if (trimmed.includes(",")) {
-        const r = await fetch(buildUrl("words/check/bulk"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: trimmed }) });
-        if (!r.ok) throw new Error();
-        const p = await r.json();
-        await fetchSession();
+        const p = await api.words.checkWordsBulk(trimmed);
+        if (!p) throw new Error();
+        await refreshSession();
         const msgs = [];
         if (p.added_count > 0) msgs.push(`Added ${p.added_count} word(s)`);
         if (p.duplicate_count > 0) msgs.push(`${p.duplicate_count} already in session`);
         if (p.failed_count > 0) msgs.push(`${p.failed_count} could not be found`);
         setManualStatus({ type: p.added_count > 0 ? "success" : (p.duplicate_count > 0 ? "info" : "error"), message: msgs.join(". ") + "." });
       } else {
-        const r = await fetch(buildUrl("words/check"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: trimmed }) });
-        if (!r.ok) throw new Error();
-        const p = await r.json();
+        const p = await api.words.checkWord(trimmed);
+        if (!p) throw new Error();
         if (!p.found || !p.word) { setManualStatus({ type: "error", message: "Word not found. Check spelling or try a different form." }); return; }
-        const saved = await fetch(buildUrl("session/words"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word_id: p.word.id }) });
-        if (!saved.ok) throw new Error();
-        const ss = await saved.json();
+        const ss = await api.session.addWord(p.word.id);
+        if (!ss) throw new Error();
         setWordPool(ss.words ?? []);
         const src = FIELD_LABELS[p.matched_field] ?? "entry";
         const extra = p.created ? "Added via GPT." : "";
@@ -477,9 +404,8 @@ function App() {
     if (!answer.trim()) { setPracticeStatus({ type: "error", message: "Try answering first." }); return; }
     const dir = practiceMode === "writing" ? "writing" : "translation";
     try {
-      const r = await fetch(buildUrl("practice/validate"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word_id: currentWriteTranslateWord.id, language_set: languageSet, direction: dir, answer }) });
-      if (!r.ok) throw new Error();
-      const p = await r.json();
+      const p = await api.practice.validate({ word_id: currentWriteTranslateWord.id, language_set: languageSet, direction: dir, answer });
+      if (!p) throw new Error();
       setPracticeStatus({ type: p.was_correct ? "success" : "error", message: p.was_correct ? "Correct!" : `The correct answer is "${p.correct_answer}".` });
       setStats(p.stats);
       setLastAnswer({ userAnswer: answer, correctAnswer: p.correct_answer, alternatives: p.alternatives || [], wasCorrect: p.was_correct, direction: dir, skipped: false });
@@ -494,9 +420,8 @@ function App() {
     if (practiceStatusTimeoutRef.current) clearTimeout(practiceStatusTimeoutRef.current);
     const dir = practiceMode === "writing" ? "writing" : "translation";
     try {
-      const r = await fetch(buildUrl("practice/skip"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word_id: currentWriteTranslateWord.id, language_set: languageSet, direction: dir, answer: "" }) });
-      if (!r.ok) throw new Error();
-      const p = await r.json();
+      const p = await api.practice.skip({ word_id: currentWriteTranslateWord.id, language_set: languageSet, direction: dir, answer: "" });
+      if (!p) throw new Error();
       setLastAnswer({ userAnswer: "", correctAnswer: p.correct_answer, alternatives: p.alternatives || [], wasCorrect: false, direction: dir, skipped: true });
       setPracticeStatus({ type: "info", message: "Skipped. The answer was:" });
       setStats(p.stats);
@@ -510,9 +435,8 @@ function App() {
     if (!chooseQuestion) return;
     if (practiceStatusTimeoutRef.current) clearTimeout(practiceStatusTimeoutRef.current);
     try {
-      const r = await fetch(buildUrl("practice/choose-translation/validate"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word_id: chooseQuestion.word_id, language_set: languageSet, direction: practiceDirection, answer: selected }) });
-      if (!r.ok) throw new Error();
-      const p = await r.json();
+      const p = await api.practice.chooseValidate({ word_id: chooseQuestion.word_id, language_set: languageSet, direction: practiceDirection, answer: selected });
+      if (!p) throw new Error();
       setPracticeStatus({ type: p.was_correct ? "success" : "error", message: p.was_correct ? "Correct!" : `Incorrect. The answer was "${p.correct_answer}".` });
       setStats(p.stats);
       fetchChooseQuestion();
@@ -524,7 +448,7 @@ function App() {
     if (!chooseQuestion) return;
     if (practiceStatusTimeoutRef.current) clearTimeout(practiceStatusTimeoutRef.current);
     try {
-      await fetch(buildUrl("practice/choose-translation/validate"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word_id: chooseQuestion.word_id, language_set: languageSet, direction: practiceDirection, answer: "" }) });
+      await api.practice.chooseValidate({ word_id: chooseQuestion.word_id, language_set: languageSet, direction: practiceDirection, answer: "" });
       setPracticeStatus({ type: "info", message: `Skipped. The answer was "${chooseQuestion.correct_answer}".` });
       fetchChooseQuestion();
       practiceStatusTimeoutRef.current = setTimeout(() => setPracticeStatus(null), STATUS_HIDE_DELAY);
@@ -556,9 +480,8 @@ function App() {
     fd.append("word_id", currentPronunciationWord.id);
     fd.append("language_set", languageSet);
     try {
-      const r = await fetch(buildUrl("practice/pronunciation"), { method: "POST", body: fd });
-      if (!r.ok) throw new Error();
-      const p = await r.json();
+      const p = await api.practice.submitPronunciation(fd);
+      if (!p) throw new Error();
       const pct = Math.round(p.similarity_score * 100);
       setPronunciationStatus({ type: p.was_correct ? "success" : "error", message: p.was_correct ? `Correct! "${p.transcribed_text}" (${pct}% match)` : `You said "${p.transcribed_text}". Expected "${p.expected_word}". ${p.feedback}` });
       setStats(p.stats);
@@ -570,8 +493,8 @@ function App() {
     if (!currentPronunciationWord) return;
     if (pronunciationStatusTimeoutRef.current) clearTimeout(pronunciationStatusTimeoutRef.current);
     try {
-      const r = await fetch(buildUrl("practice/skip"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word_id: currentPronunciationWord.id, language_set: languageSet, direction: "pronunciation", answer: "" }) });
-      if (r.ok) { const p = await r.json(); setStats(p.stats); }
+      const p = await api.practice.skip({ word_id: currentPronunciationWord.id, language_set: languageSet, direction: "pronunciation", answer: "" });
+      if (p) { setStats(p.stats); }
       setPronunciationStatus({ type: "info", message: `Skipped. The word was "${currentPronunciationWord.polish}".` });
       pronunciationStatusTimeoutRef.current = setTimeout(() => setPronunciationStatus(null), STATUS_HIDE_DELAY);
     } catch (e) { console.error(e); }
@@ -585,9 +508,8 @@ function App() {
     const answerText = selected || endingsWriteAnswer.trim();
     if (!answerText) return;
     try {
-      const r = await fetch(buildUrl("endings/validate"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word_id: endingsQuestion.word_id, answer: answerText, correct_answer: endingsQuestion.correct_answer }) });
-      if (!r.ok) throw new Error();
-      const p = await r.json();
+      const p = await api.endings.validate({ word_id: endingsQuestion.word_id, answer: answerText, correct_answer: endingsQuestion.correct_answer });
+      if (!p) throw new Error();
       setEndingsStatus({ type: p.was_correct ? "success" : "error", message: p.was_correct ? "Correct!" : `Incorrect. The answer was "${p.correct_answer}".` });
       setEndingsStats(p.stats);
       setEndingsWriteAnswer("");
@@ -600,7 +522,7 @@ function App() {
     if (!endingsQuestion) return;
     if (endingsStatusTimeoutRef.current) clearTimeout(endingsStatusTimeoutRef.current);
     try {
-      await fetch(buildUrl("endings/validate"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word_id: endingsQuestion.word_id, answer: "", correct_answer: endingsQuestion.correct_answer }) });
+      await api.endings.validate({ word_id: endingsQuestion.word_id, answer: "", correct_answer: endingsQuestion.correct_answer });
       setEndingsStatus({ type: "info", message: `Skipped. The answer was "${endingsQuestion.correct_answer}".` });
       await fetchEndingsStats();
       setEndingsWriteAnswer("");
@@ -620,16 +542,16 @@ function App() {
   // ── Manage handlers ───────────────────────────────────────
   const handleToggleWord = async (wordId, enabled) => {
     try {
-      const r = await fetch(buildUrl("session/words/toggle"), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word_id: wordId, enabled }) });
-      if (r.ok) { const d = await r.json(); setAllWords(d.words ?? []); await fetchSession(); }
+      const d = await api.session.toggleWord(wordId, enabled);
+      if (d) { setAllWords(d.words ?? []); await fetchSession(); }
     } catch (e) { console.error(e); }
   };
 
   const handleDeleteWord = async (wordId) => {
     if (!window.confirm("Permanently delete this word?")) return;
     try {
-      const r = await fetch(buildUrl(`session/words/${wordId}`), { method: "DELETE" });
-      if (r.ok) { setAllWords((prev) => prev.filter((w) => w.id !== wordId)); await fetchSession(); }
+      const d = await api.session.deleteWord(wordId);
+      if (d) { setAllWords((prev) => prev.filter((w) => w.id !== wordId)); await fetchSession(); }
     } catch (e) { console.error(e); }
   };
 
@@ -638,13 +560,12 @@ function App() {
   const handleSaveEdit = async (wordId) => {
     setEditSaving(true);
     try {
-      const r = await fetch(buildUrl(`words/${wordId}`), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editingValues) });
-      if (r.ok) {
-        const updated = await r.json();
+      const updated = await api.words.updateWord(wordId, editingValues);
+      if (updated) {
         setAllWords((prev) => prev.map((w) => (w.id === wordId ? { ...w, ...updated } : w)));
         setEditingWordId(null);
         setEditingValues({ polish: "", english: "", ukrainian: "" });
-        await fetchSession();
+        await refreshSession();
       }
     } catch (e) { console.error(e); }
     finally { setEditSaving(false); }
@@ -652,10 +573,10 @@ function App() {
 
   // ── Admin handlers ────────────────────────────────────────
   const handleDeleteDevice = async (deviceId) => {
-    try { await fetch(buildUrl(`admin/devices/${deviceId}`), { method: "DELETE" }); fetchConnectedDevices(); } catch (e) { console.error(e); }
+    try { await api.admin.deleteDevice(deviceId); fetchConnectedDevices(); } catch (e) { console.error(e); }
   };
   const handleClearAllDevices = async () => {
-    try { await fetch(buildUrl("admin/devices"), { method: "DELETE" }); fetchConnectedDevices(); } catch (e) { console.error(e); }
+    try { await api.admin.clearDevices(); fetchConnectedDevices(); } catch (e) { console.error(e); }
   };
 
   // ── Render ────────────────────────────────────────────────
