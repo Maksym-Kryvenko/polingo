@@ -54,8 +54,8 @@ Lightweight task board for the horizontal execution round. One swimlane per lane
 | F4 | Task 4: rewire App.jsx to API client (per-domain commits, build green) | 🟦 Ready | F3 |
 | F5 | Task 5: extract `useSession` + `usePractice` hooks (tested) | 🟦 Ready | F4 |
 | F6 | Task 6: `REFACTOR.md` + manual smoke | 🟦 Ready | F5 |
-| F7 | Rebase on post-Plan-2 main; absorb oni/one + gender contract delta | ⏸ Blocked | F6, A8 |
-| F8 | **Merge to main** | ⏸ Blocked | F7 |
+| F7 | Rebase on post-Plan-2 main; absorb oni/one + gender contract delta (no delta — frontend never referenced those enums) | ✅ Done | F6, A8 |
+| F8 | **Merge to main** | ✅ Done | F7 |
 
 ## Lane B — Backend B / MCP + Worker (branch `plan-5-mcp`, merge 4th)
 
