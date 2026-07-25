@@ -32,5 +32,5 @@ export function useSession() {
   }, [refreshSession, refreshStats]);
 
   return { languageSet, wordPool, stats, loadingStats, refreshSession, refreshStats,
-           changeLanguage, setLanguageSet, setWordPool };
+           changeLanguage, setLanguageSet, setWordPool, setStats };
 }
